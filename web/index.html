@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="glasstape — typed, self-healing MCP bridge between Claude and TradingView Desktop.">
+</head>
+<body>
+<title>GLASSTAPE — Drive TradingView with Claude</title>
+
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <filter id="lens" x="-20%" y="-20%" width="140%" height="140%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.006 0.013" numOctaves="2" seed="11" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="0.6" result="sn"/>
+    <feDisplacementMap in="SourceGraphic" in2="sn" scale="9" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
+<canvas id="bg" aria-hidden="true"></canvas>
+<div class="grain" aria-hidden="true"></div>
+
+<style>
+  :root{
+    --bg:#070a0f; --bg2:#0a1018;
+    --ink:#d7e0ea; --dim:#93a2b4; --faint:#5d6c7d;
+    --line:rgba(255,255,255,.10); --line-soft:rgba(255,255,255,.06);
+    --aqua:#5fe6c2; --aqua-hi:#9ffce4; --amber:#ffb454; --good:#56e08a; --bad:#ff7a7a;
+    --violet:#8c7bff;
+    /* iPhone "Regular" glass — translucent so saturated color refracts through (vibrancy) */
+    --glass:rgba(28,38,54,.28);
+    --glass-2:rgba(18,26,40,.40);
+    --glass-card:rgba(24,32,48,.34);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --maxw:1080px;
+    --r:18px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--sans); line-height:1.6;
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;
+    letter-spacing:.1px;
+  }
+  #bg{position:fixed; inset:0; width:100vw; height:100vh; z-index:-2; display:block}
+  .grain{position:fixed; inset:0; z-index:-1; pointer-events:none; opacity:.05;
+    background-image:radial-gradient(rgba(255,255,255,.7) .5px,transparent .5px);
+    background-size:3px 3px; mix-blend-mode:overlay}
+
+  ::selection{background:rgba(95,230,194,.28); color:#fff}
+  a{color:inherit; text-decoration:none}
+  :focus-visible{outline:2px solid var(--aqua); outline-offset:3px; border-radius:6px}
+
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+
+  /* ---------- glass ---------- */
+  .glass{
+    background:var(--glass);
+    /* high blur + boosted saturation/brightness = iPhone vibrancy: glass tints itself with the color behind */
+    backdrop-filter:blur(32px) saturate(2.1) brightness(1.12);
+    -webkit-backdrop-filter:blur(32px) saturate(2.1) brightness(1.12);
+    border:1px solid rgba(255,255,255,.18);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.40),   /* bright specular top edge */
+      inset 0 0 0 1px rgba(255,255,255,.04),
+      inset 0 -14px 30px -22px rgba(0,0,0,.55),
+      0 30px 80px -30px rgba(0,0,0,.9),
+      0 0 0 .5px rgba(120,220,255,.05);
+    border-radius:var(--r);
+    position:relative;
+    isolation:isolate;
+  }
+  .glass::after{ /* specular sweep + edge lensing highlight */
+    content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+    background:
+      linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0) 30%),
+      radial-gradient(120% 80% at 0% 0%, rgba(150,235,255,.10), transparent 45%);
+    mask:linear-gradient(180deg,#000,transparent 62%);
+  }
+
+  /* ---------- eyebrow / labels ---------- */
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:.22em; text-transform:uppercase;
+    color:var(--aqua); display:inline-flex; align-items:center; gap:9px;
+  }
+  .eyebrow::before{content:"//"; color:var(--faint)}
+
+  /* ---------- nav ---------- */
+  nav{position:fixed; top:14px; left:0; right:0; z-index:50; display:flex; justify-content:center; padding:0 16px}
+  .navbar{
+    width:100%; max-width:var(--maxw); display:flex; align-items:center; gap:18px;
+    padding:11px 14px 11px 18px; border-radius:16px;
+  }
+  .brand{font-family:var(--mono); font-weight:600; letter-spacing:.04em; font-size:15px; display:flex; align-items:center; gap:10px}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--aqua);box-shadow:0 0 12px var(--aqua)}
+  .navlinks{display:flex; gap:22px; margin-left:8px}
+  .navlinks a{font-size:13.5px; color:var(--dim); font-family:var(--mono)}
+  .navlinks a:hover{color:var(--ink)}
+  .nav-spacer{flex:1}
+  .status{display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; color:var(--dim);
+    padding:6px 11px; border-radius:999px; border:1px solid var(--line-soft); background:rgba(255,255,255,.03)}
+  .pulse{width:7px;height:7px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 rgba(86,224,138,.6);animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(86,224,138,.55)}70%{box-shadow:0 0 0 8px rgba(86,224,138,0)}100%{box-shadow:0 0 0 0 rgba(86,224,138,0)}}
+  .btn{font-family:var(--mono); font-size:13px; padding:9px 15px; border-radius:11px; cursor:pointer; border:1px solid var(--line);
+    background:rgba(255,255,255,.05); color:var(--ink); display:inline-flex; align-items:center; gap:8px; transition:.18s ease}
+  .btn:hover{background:rgba(255,255,255,.10); transform:translateY(-1px)}
+  .btn-star{color:#06120e}
+  .btn-star{background:linear-gradient(180deg,var(--aqua-hi),var(--aqua)); border-color:transparent; font-weight:600;
+    box-shadow:0 8px 26px -8px rgba(95,230,194,.6)}
+  .btn-star:hover{box-shadow:0 12px 32px -8px rgba(95,230,194,.75)}
+
+  @media(max-width:760px){ .navlinks{display:none} }
+
+  /* ---------- hero ---------- */
+  header{padding:150px 0 70px}
+  .hero-eye{justify-content:center; display:flex; margin-bottom:26px}
+  .wordmark{
+    text-align:center; font-family:var(--sans); font-weight:800;
+    font-size:clamp(54px,12vw,140px); line-height:.92; letter-spacing:-.04em; margin:0;
+    background:linear-gradient(175deg,#ffffff 0%,#9ffce4 26%,#46d9ff 46%,#7b8bff 58%,#eafffb 74%,#5fe6c2 100%);
+    background-size:100% 240%;
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 2px 1px rgba(0,0,0,.4));
+    animation:sheen 7s ease-in-out infinite;
+  }
+  @keyframes sheen{0%,100%{background-position:50% 12%}50%{background-position:50% 88%}}
+  .tagline{text-align:center; max-width:620px; margin:22px auto 0; color:var(--dim);
+    font-size:clamp(16px,2.1vw,20px); text-wrap:balance}
+  .tagline b{color:var(--ink); font-weight:600}
+
+  .cmdrow{display:flex; gap:12px; justify-content:center; align-items:center; margin:34px auto 0; flex-wrap:wrap}
+  .cmd{display:flex; align-items:center; gap:14px; padding:13px 14px 13px 18px; border-radius:14px; font-family:var(--mono);
+    font-size:14.5px; color:var(--ink)}
+  .cmd .prmt{color:var(--aqua)}
+  .cmd .copy{margin-left:6px; cursor:pointer; border:1px solid var(--line); background:rgba(255,255,255,.05);
+    color:var(--dim); border-radius:9px; padding:7px 11px; font-family:var(--mono); font-size:12px; transition:.18s}
+  .cmd .copy:hover{color:var(--ink); background:rgba(255,255,255,.1)}
+  .cmd .copy.ok{color:var(--good); border-color:rgba(86,224,138,.4)}
+
+  /* ---------- hero terminal demo ---------- */
+  .demo{margin:64px auto 0; max-width:960px; overflow:hidden}
+  .demo-head{display:flex; align-items:center; gap:14px; padding:13px 18px; border-bottom:1px solid var(--line-soft);
+    font-family:var(--mono); font-size:12.5px; color:var(--faint)}
+  .lights{display:flex; gap:7px}
+  .lights i{width:11px;height:11px;border-radius:50%;display:block}
+  .lights i:nth-child(1){background:#ff5f57} .lights i:nth-child(2){background:#febc2e} .lights i:nth-child(3){background:#28c840}
+  .demo-grid{display:grid; grid-template-columns:1.05fr 1fr; min-height:300px; background:rgba(8,12,18,.34)}
+  @media(max-width:780px){ .demo-grid{grid-template-columns:1fr} }
+  .term{padding:22px 22px 26px; font-family:var(--mono); font-size:14px; line-height:1.85; border-right:1px solid var(--line-soft)}
+  @media(max-width:780px){ .term{border-right:none; border-bottom:1px solid var(--line-soft)} }
+  .term .line{white-space:pre-wrap}
+  .term .u{color:var(--aqua)} .term .ok{color:var(--good)} .term .k{color:var(--amber)} .term .c{color:var(--faint)}
+  .caret{display:inline-block;width:8px;height:16px;background:var(--aqua);vertical-align:-3px;margin-left:2px;animation:blink 1s step-end infinite}
+  @keyframes blink{50%{opacity:0}}
+  .chartpane{padding:18px 20px; display:flex; flex-direction:column; gap:8px}
+  .chart-meta{display:flex; align-items:baseline; gap:12px; font-family:var(--mono); font-size:12.5px; color:var(--dim)}
+  .chart-meta .sym{color:var(--ink); font-size:15px; font-weight:600; letter-spacing:.02em}
+  .chart-meta .up{color:var(--good)} .chart-meta .tf{margin-left:auto; color:var(--faint)}
+  #chart{width:100%; flex:1; min-height:210px; display:block}
+
+  /* ---------- section scaffolding ---------- */
+  section{padding:90px 0; position:relative}
+  .sec-head{max-width:680px; margin-bottom:46px}
+  .sec-head h2{font-size:clamp(28px,4.4vw,44px); line-height:1.08; letter-spacing:-.025em; margin:14px 0 0; text-wrap:balance; font-weight:760}
+  .sec-head p{color:var(--dim); margin:16px 0 0; font-size:17px; max-width:60ch}
+
+  /* ---------- contrast / why ---------- */
+  .why{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
+  @media(max-width:780px){ .why{grid-template-columns:1fr} }
+  .why .card{padding:24px; background:var(--glass-card)}
+  .why .vs{font-family:var(--mono); font-size:12px; color:var(--bad); letter-spacing:.04em}
+  .why .vs.good{color:var(--good)}
+  .why h3{margin:14px 0 6px; font-size:18px; letter-spacing:-.01em}
+  .why p{margin:0; color:var(--dim); font-size:14.5px}
+  .why .old{color:var(--faint); text-decoration:line-through; text-decoration-color:rgba(255,122,122,.5)}
+
+  /* ---------- features ---------- */
+  .feat{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
+  @media(max-width:880px){ .feat{grid-template-columns:repeat(2,1fr)} }
+  @media(max-width:560px){ .feat{grid-template-columns:1fr} }
+  .fcard{padding:26px 24px; background:var(--glass-card); transition:transform .22s ease, box-shadow .22s ease; overflow:hidden}
+  .fcard:hover{transform:translateY(-4px)}
+  .fglyph{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;margin-bottom:18px;
+    border:1px solid var(--line); background:rgba(95,230,194,.08); color:var(--aqua); font-family:var(--mono); font-size:18px}
+  .fcard h3{margin:0 0 8px; font-size:17.5px; letter-spacing:-.01em}
+  .fcard p{margin:0; color:var(--dim); font-size:14.5px}
+  .fcard .tag{display:inline-block; margin-top:14px; font-family:var(--mono); font-size:11px; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--amber); border:1px solid rgba(255,180,84,.3); padding:3px 9px; border-radius:999px}
+  .fcard .tag.live{color:var(--good); border-color:rgba(86,224,138,.32)}
+
+  /* ---------- architecture ---------- */
+  .arch{display:flex; flex-direction:column; gap:0; max-width:760px}
+  .layer{padding:18px 22px; display:flex; align-items:center; gap:18px; border-radius:14px; margin-bottom:10px}
+  .layer .idx{font-family:var(--mono); color:var(--faint); font-size:12px; width:26px; flex:none}
+  .layer .name{font-family:var(--mono); font-weight:600; color:var(--ink); font-size:15px; width:160px; flex:none}
+  .layer .desc{color:var(--dim); font-size:14px}
+  @media(max-width:620px){ .layer{flex-wrap:wrap; gap:6px} .layer .name{width:auto} .layer .desc{flex-basis:100%} }
+  .conn{height:18px; width:2px; background:linear-gradient(var(--aqua),transparent); margin:0 0 0 38px}
+  .layer.tv{border-color:rgba(95,230,194,.35)} .layer.tv .name{color:var(--aqua)}
+
+  /* ---------- quickstart ---------- */
+  .qs{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+  @media(max-width:780px){ .qs{grid-template-columns:1fr} }
+  .code{padding:0; overflow:hidden; background:var(--glass-2)}
+  .code .ch{padding:11px 16px; border-bottom:1px solid var(--line-soft); font-family:var(--mono); font-size:12px; color:var(--faint);
+    display:flex; align-items:center; gap:10px}
+  .code pre{margin:0; padding:18px 18px; overflow-x:auto; font-family:var(--mono); font-size:13.5px; line-height:1.85}
+  .code .c{color:var(--faint)} .code .a{color:var(--aqua)} .code .k{color:var(--amber)} .code .s{color:#a8d3ff}
+
+  /* ---------- footer ---------- */
+  footer{padding:70px 0 50px; margin-top:40px; border-top:1px solid var(--line-soft)}
+  .foot-grid{display:flex; justify-content:space-between; gap:30px; flex-wrap:wrap}
+  .foot-grid .col h4{font-family:var(--mono); font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); margin:0 0 14px}
+  .foot-grid .col a{display:block; color:var(--dim); font-size:14px; margin-bottom:9px}
+  .foot-grid .col a:hover{color:var(--ink)}
+  .disclaimer{margin-top:40px; padding:18px 20px; border-radius:14px; font-size:12.5px; color:var(--faint);
+    font-family:var(--mono); line-height:1.7; border:1px dashed var(--line)}
+  .disclaimer b{color:var(--dim)}
+  .legal{margin-top:26px; font-family:var(--mono); font-size:12px; color:var(--faint); display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px}
+
+  @media(prefers-reduced-motion:reduce){
+    *{animation:none!important; scroll-behavior:auto!important; transition:none!important}
+  }
+  /* Apple HIG: Reduce Transparency → frostier, more opaque glass */
+  @media(prefers-reduced-transparency:reduce){
+    .glass{ background:rgba(14,20,30,.92); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px) }
+    .demo-grid{ background:rgba(10,14,20,.92) }
+  }
+  /* Apple HIG: Increase Contrast → stronger borders + separation */
+  @media(prefers-contrast:more){
+    .glass{ border-color:rgba(255,255,255,.5); background:rgba(12,18,28,.86) }
+    body{ --dim:#c2cdda; --faint:#8c9bad }
+  }
+</style>
+
+<nav>
+  <div class="navbar glass">
+    <span class="brand"><span class="dot"></span>glasstape</span>
+    <div class="navlinks">
+      <a href="#why">Why</a>
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#start">Quickstart</a>
+    </div>
+    <span class="nav-spacer"></span>
+    <span class="status"><span class="pulse"></span>connection&nbsp;healthy</span>
+    <a class="btn btn-star" href="#">★ Star on GitHub</a>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <div class="hero-eye"><span class="eyebrow">open-source MCP bridge · chrome devtools protocol</span></div>
+    <h1 class="wordmark">GLASSTAPE</h1>
+    <p class="tagline">Drive TradingView Desktop with Claude. A <b>typed, self-healing</b> bridge that reads your charts, writes Pine, runs replay — and refuses to break quietly when TradingView ships an update.</p>
+
+    <div class="cmdrow">
+      <div class="cmd glass" style="filter:url(#lens)">
+        <span class="prmt">$</span><span id="installcmd">npx glasstape init</span>
+        <button class="copy" id="copybtn" aria-label="Copy install command">copy</button>
+      </div>
+      <a class="btn" href="#start">Read the docs →</a>
+    </div>
+
+    <!-- live demo -->
+    <div class="demo glass">
+      <div class="demo-head">
+        <span class="lights"><i></i><i></i><i></i></span>
+        <span>claude — glasstape mcp · localhost:9222</span>
+      </div>
+      <div class="demo-grid">
+        <div class="term" id="term" aria-label="Example Claude session"></div>
+        <div class="chartpane">
+          <div class="chart-meta">
+            <span class="sym" id="csym">BTCUSD</span>
+            <span class="up" id="cchg">+2.41%</span>
+            <span class="tf" id="ctf">4H · RSI(14)</span>
+          </div>
+          <canvas id="chart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="why">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">the upgrade</span>
+      <h2>The community proved the idea. We made it hold up.</h2>
+      <p>The original bridge is brilliant and fragile — untyped JavaScript poking undocumented TradingView internals, breaking silently on every update. Glasstape keeps the magic and engineers the parts that hurt.</p>
+    </div>
+    <div class="why">
+      <div class="card glass">
+        <span class="vs">before</span>
+        <h3>Breaks in silence</h3>
+        <p><span class="old">cryptic stack trace</span> → Glasstape detects the TradingView version, self-tests its selectors, and tells you exactly what moved.</p>
+      </div>
+      <div class="card glass">
+        <span class="vs">before</span>
+        <h3>Untyped, hard to extend</h3>
+        <p><span class="old">78 loose JS tools</span> → typed Zod schemas per tool, a clean adapter wall, and a CLI you can test without Claude.</p>
+      </div>
+      <div class="card glass">
+        <span class="vs good">new</span>
+        <h3>Backtests you can trust</h3>
+        <p>Real OHLCV + vectorized backtests with fees, slippage and out-of-sample splits — with overfitting guardrails the in-chart approach can't give you.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">capabilities</span>
+      <h2>Everything the original does. Then the part that keeps it alive.</h2>
+      <p>Full parity on the tools traders actually use, wrapped in an architecture built to survive platform updates and welcome contributors.</p>
+    </div>
+    <div class="feat">
+      <div class="fcard glass"><div class="fglyph">⌖</div><h3>Read the chart</h3><p>Live symbol, timeframe, OHLCV, quotes and indicator values — pulled straight from your session over CDP.</p></div>
+      <div class="fcard glass"><div class="fglyph">↺</div><h3>Navigate &amp; switch</h3><p>Change symbols, timeframes, chart types and multi-pane layouts the way you'd click them — just faster.</p></div>
+      <div class="fcard glass"><div class="fglyph">ƒ</div><h3>Pine Script loop</h3><p>Inject source, smart-compile, read errors and console output — a tight write-compile-debug cycle for the AI.</p></div>
+      <div class="fcard glass"><div class="fglyph">▷</div><h3>Replay &amp; practice</h3><p>Step bar-by-bar through history, simulate buys and sells, and track P&amp;L for honest forward testing.</p></div>
+      <div class="fcard glass"><div class="fglyph">◈</div><h3>Self-healing selectors<span class="tag">reliability</span></h3><p>Every UI action carries ordered fallbacks and a self-test. When TradingView shifts, it adapts — or warns loudly.</p></div>
+      <div class="fcard glass"><div class="fglyph">♥</div><h3>Real health-check<span class="tag live">live</span></h3><p>One call reports CDP link, target, login, version and selector status — actionable, not a guess.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">architecture</span>
+      <h2>Fragility, quarantined.</h2>
+      <p>Everything that can break when TradingView updates lives behind one wall. The rest of the system is typed, tested, and stable.</p>
+    </div>
+    <div class="arch">
+      <div class="layer glass"><span class="idx">01</span><span class="name">Claude Code</span><span class="desc">Asks in natural language; receives typed results.</span></div>
+      <div class="conn"></div>
+      <div class="layer glass"><span class="idx">02</span><span class="name">MCP registry</span><span class="desc">Validates input with Zod schemas; exposes each capability as a tool over stdio.</span></div>
+      <div class="conn"></div>
+      <div class="layer glass"><span class="idx">03</span><span class="name">Domain modules</span><span class="desc">Typed functions: chart, pine, replay, drawings, alerts, screenshots.</span></div>
+      <div class="conn"></div>
+      <div class="layer glass"><span class="idx">04</span><span class="name">TV adapter</span><span class="desc">The only place that knows TradingView internals. Self-healing selectors live here.</span></div>
+      <div class="conn"></div>
+      <div class="layer glass"><span class="idx">05</span><span class="name">CDP transport</span><span class="desc">chrome-remote-interface · auto-reconnect · target discovery · backoff.</span></div>
+      <div class="conn"></div>
+      <div class="layer glass tv"><span class="idx">06</span><span class="name">TradingView</span><span class="desc">Your local Desktop app on :9222 — entirely on your machine.</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">quickstart</span>
+      <h2>Running in two commands.</h2>
+      <p>Launch TradingView with the debug port, point Claude at the server, and you're live. All local — no TradingView data ever leaves your machine.</p>
+    </div>
+    <div class="qs">
+      <div class="code glass">
+        <div class="ch"><span class="lights"><i></i><i></i><i></i></span> 1 — launch TradingView</div>
+<pre><span class="c"># macOS · enable the local debug port</span>
+open -a "TradingView" --args \
+  <span class="k">--remote-debugging-port</span>=<span class="s">9222</span>
+
+<span class="c"># then confirm the bridge can see it</span>
+<span class="a">npx</span> glasstape <span class="k">health</span></pre>
+      </div>
+      <div class="code glass">
+        <div class="ch"><span class="lights"><i></i><i></i><i></i></span> 2 — connect Claude</div>
+<pre><span class="c">// .mcp.json</span>
+{
+  <span class="s">"glasstape"</span>: {
+    <span class="s">"command"</span>: <span class="s">"npx"</span>,
+    <span class="s">"args"</span>: [<span class="s">"glasstape"</span>, <span class="s">"serve"</span>]
+  }
+}
+
+<span class="c">// now just ask Claude →</span>
+<span class="a">"switch to ETHUSD, 1D, add MACD"</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="col" style="max-width:280px">
+        <span class="brand" style="font-size:16px"><span class="dot"></span>glasstape</span>
+        <p style="color:var(--faint); font-size:13.5px; margin-top:14px; font-family:var(--mono)">The typed, self-healing bridge between Claude and TradingView Desktop.</p>
+      </div>
+      <div class="col"><h4>Project</h4><a href="#">GitHub</a><a href="#">Documentation</a><a href="#">Changelog</a><a href="#">Roadmap</a></div>
+      <div class="col"><h4>Learn</h4><a href="#">Quickstart</a><a href="#">Tool reference</a><a href="#">Architecture</a><a href="#">Contributing</a></div>
+      <div class="col"><h4>Community</h4><a href="#">Discussions</a><a href="#">Issues</a><a href="#">License · MIT</a></div>
+    </div>
+
+    <div class="disclaimer">
+      <b>Unofficial &amp; experimental.</b> Not affiliated with, endorsed by, or associated with TradingView Inc. Glasstape drives undocumented internal interfaces over the Chrome DevTools Protocol and can break on any TradingView update. You are responsible for compliance with TradingView's Terms of Use — automated or non-display use of their data may conflict with those terms. For personal, educational and research use. All processing is local.
+    </div>
+    <div class="legal">
+      <span>© 2026 glasstape · MIT</span>
+      <span>built where a designer met a developer</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- animated mesh-gradient background (ShaderGradient stand-in) ---------- */
+  var bg = document.getElementById('bg'), bx = bg.getContext('2d'), W,H,DPR;
+  var blobs = [
+    {h:'#0bbf9f', r:0.56, a:0.0, sx:0.00013, sy:0.00017, px:0.16, py:0.20}, // teal
+    {h:'#1f74e6', r:0.64, a:1.3, sx:0.00010, sy:0.00012, px:0.82, py:0.26}, // electric blue
+    {h:'#7b3ff0', r:0.52, a:2.1, sx:0.00016, sy:0.00009, px:0.58, py:0.84}, // violet
+    {h:'#ff9d2e', r:0.34, a:3.4, sx:0.00012, sy:0.00015, px:0.26, py:0.80}, // amber
+    {h:'#e0399b', r:0.30, a:4.7, sx:0.00014, sy:0.00011, px:0.86, py:0.80}  // magenta
+  ];
+  function resize(){
+    DPR=Math.min(window.devicePixelRatio||1,2);
+    W=bg.width=innerWidth*DPR; H=bg.height=innerHeight*DPR;
+    bg.style.width=innerWidth+'px'; bg.style.height=innerHeight+'px';
+  }
+  function hex(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
+  function draw(t){
+    bx.clearRect(0,0,W,H);
+    bx.fillStyle='#070a0f'; bx.fillRect(0,0,W,H);
+    bx.globalCompositeOperation='lighter';
+    for(var i=0;i<blobs.length;i++){
+      var b=blobs[i];
+      var cx=(b.px + Math.sin(t*b.sx + b.a)*0.16)*W;
+      var cy=(b.py + Math.cos(t*b.sy + b.a)*0.16)*H;
+      var rad=b.r*Math.max(W,H);
+      var g=bx.createRadialGradient(cx,cy,0,cx,cy,rad);
+      var c=hex(b.h);
+      g.addColorStop(0,'rgba('+c[0]+','+c[1]+','+c[2]+',0.82)');
+      g.addColorStop(0.5,'rgba('+c[0]+','+c[1]+','+c[2]+',0.32)');
+      g.addColorStop(1,'rgba('+c[0]+','+c[1]+','+c[2]+',0)');
+      bx.fillStyle=g; bx.beginPath(); bx.arc(cx,cy,rad,0,7); bx.fill();
+    }
+    bx.globalCompositeOperation='source-over';
+  }
+  resize(); addEventListener('resize',resize);
+  if(reduce){ draw(8000); }
+  else { (function loop(now){ draw(now||0); requestAnimationFrame(loop); })(0); }
+
+  /* ---------- candlestick chart ---------- */
+  var cv=document.getElementById('chart'), cx2=cv.getContext('2d');
+  function genCandles(n, up){
+    var arr=[], price=100, seed=7;
+    function rnd(){ seed=(seed*9301+49297)%233280; return seed/233280; }
+    for(var i=0;i<n;i++){
+      var drift=(up?0.6:-0.3);
+      var o=price, ch=(rnd()-0.5)*4 + drift; var cl=o+ch;
+      var hi=Math.max(o,cl)+rnd()*2.2, lo=Math.min(o,cl)-rnd()*2.2;
+      arr.push({o:o,c:cl,h:hi,l:lo}); price=cl;
+    }
+    return arr;
+  }
+  var candles=genCandles(46,true), drawProg=0;
+  function paintChart(){
+    var w=cv.clientWidth, h=cv.clientHeight; DPR=Math.min(window.devicePixelRatio||1,2);
+    cv.width=w*DPR; cv.height=h*DPR; cx2.setTransform(DPR,0,0,DPR,0,0);
+    cx2.clearRect(0,0,w,h);
+    var max=-1e9,min=1e9;
+    candles.forEach(function(c){max=Math.max(max,c.h);min=Math.min(min,c.l);});
+    var pad=14, gw=(w-pad*2)/candles.length;
+    function Y(v){ return pad + (1-(v-min)/(max-min))*(h-pad*2); }
+    // grid
+    cx2.strokeStyle='rgba(255,255,255,.045)'; cx2.lineWidth=1;
+    for(var g=0;g<=4;g++){ var yy=pad+g*(h-pad*2)/4; cx2.beginPath(); cx2.moveTo(pad,yy); cx2.lineTo(w-pad,yy); cx2.stroke(); }
+    var shown=Math.floor(candles.length*drawProg);
+    for(var i=0;i<shown;i++){
+      var c=candles[i], x=pad+i*gw+gw/2, up=c.c>=c.o;
+      var col=up?'#56e08a':'#ff7a7a';
+      cx2.strokeStyle=col; cx2.fillStyle=up?'rgba(86,224,138,.85)':'rgba(255,122,122,.85)';
+      cx2.lineWidth=1; cx2.beginPath(); cx2.moveTo(x,Y(c.h)); cx2.lineTo(x,Y(c.l)); cx2.stroke();
+      var bw=Math.max(gw*0.6,2), top=Y(Math.max(c.o,c.c)), bot=Y(Math.min(c.o,c.c));
+      cx2.fillRect(x-bw/2, top, bw, Math.max(bot-top,1.2));
+    }
+    // last price line
+    if(shown>0){ var ly=Y(candles[shown-1].c); cx2.strokeStyle='rgba(95,230,194,.5)'; cx2.setLineDash([4,4]);
+      cx2.beginPath(); cx2.moveTo(pad,ly); cx2.lineTo(w-pad,ly); cx2.stroke(); cx2.setLineDash([]); }
+  }
+  function animChart(){
+    if(reduce){ drawProg=1; paintChart(); return; }
+    drawProg=0;
+    (function step(){ drawProg=Math.min(1,drawProg+0.045); paintChart(); if(drawProg<1) requestAnimationFrame(step); })();
+  }
+  addEventListener('resize',paintChart);
+
+  /* ---------- terminal typing ---------- */
+  var term=document.getElementById('term');
+  var script=[
+    {t:'<span class="c"># ask in plain language</span>',d:300},
+    {t:'<span class="u">you ›</span> switch to BTCUSD, 4H, add RSI',d:700,type:true},
+    {t:'<span class="ok">✓</span> symbol  <span class="k">→ BTCUSD</span>',d:380},
+    {t:'<span class="ok">✓</span> timeframe  <span class="k">→ 4H</span>',d:300},
+    {t:'<span class="ok">✓</span> study  <span class="k">→ RSI(14)</span>  <span class="c">applied</span>',d:300,chart:true},
+    {t:'<span class="ok">✓</span> health  <span class="c">cdp ✓ · target ✓ · v2.14 ✓ · 78 tools</span>',d:600},
+    {t:'<span class="u">you ›</span> read the last 3 candles',d:700,type:true},
+    {t:'<span class="ok">✓</span> <span class="c">O 63,210  H 63,980  L 62,840  C 63,760</span>',d:1600}
+  ];
+  function typeLine(html, cb){
+    // strip tags for typing effect on the user lines
+    var div=document.createElement('div'); div.className='line';
+    term.appendChild(div);
+    var plain=html.replace(/<[^>]+>/g,'');
+    var prefixMatch=html.match(/^<span class="u">.*?<\/span>\s?/);
+    var prefix=prefixMatch?prefixMatch[0]:'';
+    var rest=plain.replace(/^you ›\s?/,'');
+    var i=0;
+    (function tick(){
+      div.innerHTML=prefix+rest.slice(0,i)+'<span class="caret"></span>';
+      i++;
+      if(i<=rest.length){ setTimeout(tick, 26); }
+      else { div.innerHTML=html; cb&&cb(); }
+    })();
+  }
+  function addLine(html, cb){ var d=document.createElement('div'); d.className='line'; d.innerHTML=html; term.appendChild(d); cb&&cb(); }
+  function run(idx){
+    if(idx>=script.length){ return; }
+    var s=script[idx];
+    var done=function(){ if(s.chart){ animChart(); } setTimeout(function(){run(idx+1);}, s.d); };
+    if(s.type && !reduce){ typeLine(s.t, done); }
+    else { addLine(s.t, done); }
+  }
+  if(reduce){ script.forEach(function(s){addLine(s.t);}); paintChart(); }
+  else { setTimeout(function(){ run(0); }, 500); paintChart(); }
+
+  /* ---------- copy button ---------- */
+  var cb2=document.getElementById('copybtn');
+  cb2.addEventListener('click',function(){
+    var txt=document.getElementById('installcmd').textContent;
+    if(navigator.clipboard){ navigator.clipboard.writeText(txt); }
+    cb2.textContent='copied ✓'; cb2.classList.add('ok');
+    setTimeout(function(){ cb2.textContent='copy'; cb2.classList.remove('ok'); },1500);
+  });
+})();
+</script>
+
+</body>
+</html>

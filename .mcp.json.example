@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "glasstape": {
+      "command": "node",
+      "args": ["dist/cli/index.js", "serve"],
+      "env": {
+        "GLASSTAPE_PORT": "9222"
+      }
+    }
+  }
+}
