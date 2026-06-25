@@ -11,6 +11,7 @@ export { PineController } from "./tv/pine.js";
 export { intervalLabelCandidates } from "./tv/intervals.js";
 export { SELECTORS, type SelectorKey, type SelfTestReport } from "./tv/selectors.js";
 export { buildServer, startServer } from "./mcp/server.js";
+export { buildHttpServer, startHttpServer } from "./http/server.js";
 export { allTools } from "./domains/index.js";
 export { runHealthCheck, type HealthReport } from "./health/check.js";
 export { GlasstapeError, type ErrorCode } from "./util/errors.js";

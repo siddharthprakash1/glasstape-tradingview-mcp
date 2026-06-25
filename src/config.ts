@@ -9,6 +9,8 @@ export interface GlasstapeConfig {
   targetMatchers: string[];
   /** Default timeout (ms) for a single page evaluation. */
   evalTimeoutMs: number;
+  /** Port for the optional HTTP API + dashboard (`glasstape http`). */
+  httpPort: number;
 }
 
 function intFromEnv(name: string, fallback: number): number {
@@ -24,6 +26,7 @@ export function loadConfig(overrides: Partial<GlasstapeConfig> = {}): GlasstapeC
     port: intFromEnv("GLASSTAPE_PORT", 9222),
     targetMatchers: ["tradingview"],
     evalTimeoutMs: intFromEnv("GLASSTAPE_EVAL_TIMEOUT_MS", 15_000),
+    httpPort: intFromEnv("GLASSTAPE_HTTP_PORT", 8787),
     ...overrides,
   };
 }

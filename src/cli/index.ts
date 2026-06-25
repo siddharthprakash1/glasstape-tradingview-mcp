@@ -2,6 +2,7 @@
 import { writeFile } from "node:fs/promises";
 import { createContext } from "../context.js";
 import { startServer } from "../mcp/server.js";
+import { startHttpServer } from "../http/server.js";
 import { runHealthCheck } from "../health/check.js";
 import { allTools } from "../domains/index.js";
 import { isGlasstapeError } from "../util/errors.js";
@@ -14,6 +15,7 @@ const HELP = `glasstape v${VERSION} — drive TradingView Desktop with Claude ov
 Usage: glasstape <command> [args]
 
   serve                 Start the MCP server on stdio (for Claude / MCP clients)
+  http [port]           Start the HTTP API + web dashboard (default :8787)
   health                Full connection + selector health check
   doctor                Selector self-test (which UI hooks still resolve)
   state                 Print the current chart state
@@ -182,6 +184,13 @@ async function main(): Promise<boolean> {
     const ctx = createContext();
     await startServer(ctx);
     return true; // keep the process alive on the stdio transport
+  }
+
+  if (command === "http") {
+    const port = rest[0] ? Number.parseInt(rest[0], 10) : undefined;
+    const ctx = createContext();
+    await startHttpServer(ctx, port);
+    return true; // keep the process alive serving HTTP
   }
 
   let code = 0;

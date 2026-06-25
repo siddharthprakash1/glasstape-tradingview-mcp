@@ -72,12 +72,42 @@ Then just ask Claude:
 
 > "Switch to ETHUSD on the 4H, add an RSI, and screenshot it."
 
+## Web dashboard
+
+Prefer clicking to talking? glasstape ships a **dark glass control panel** backed
+by a small HTTP API — no Claude required:
+
+```bash
+npm run build
+node dist/cli/index.js http        # serves on http://localhost:8787
+# open the dashboard:
+open http://localhost:8787/app/
+```
+
+The dashboard gives you a connection status light, symbol + timeframe controls,
+a live chart preview (auto-refreshing screenshot of your TradingView), a legend
+readout, and a Pine Script injector — every control wired to the same engine the
+MCP tools use. The landing page (`http://localhost:8787/`) links straight to it.
+
+The HTTP API (handy for your own scripts):
+
+| Method · Path | Does |
+|---|---|
+| `GET /api/health` | full health report |
+| `GET /api/state` | current symbol/timeframe |
+| `POST /api/symbol` `{symbol}` | switch symbol |
+| `POST /api/timeframe` `{timeframe}` | switch interval |
+| `GET /api/screenshot` | PNG of the chart |
+| `GET /api/legend` | OHLC/indicator values |
+| `POST /api/pine` `{source}` | inject Pine source |
+
 ## CLI
 
 The `glasstape` CLI mirrors the tools so you can test without an MCP client:
 
 ```
 glasstape serve                 Start the MCP server on stdio
+glasstape http [port]           Start the HTTP API + web dashboard (:8787)
 glasstape health                Full connection + selector health check
 glasstape doctor                Selector self-test (which UI hooks resolve)
 glasstape state                 Print the current chart state
