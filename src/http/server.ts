@@ -90,6 +90,29 @@ async function handleApi(
       const { source } = await parseJsonBody(req);
       return sendJson(res, 200, await ctx.pine.setSource(String(source ?? "")));
     }
+    if (method === "POST" && pathname === "/api/indicator") {
+      const { name } = await parseJsonBody(req);
+      return sendJson(res, 200, await ctx.tv.addIndicator(String(name ?? "")));
+    }
+    if (method === "POST" && pathname === "/api/chart-type") {
+      const { type } = await parseJsonBody(req);
+      return sendJson(res, 200, await ctx.tv.setChartType(String(type ?? "")));
+    }
+    if (method === "POST" && pathname === "/api/layout") {
+      const { layout } = await parseJsonBody(req);
+      return sendJson(res, 200, await ctx.tv.setLayout(String(layout ?? "")));
+    }
+    if (method === "POST" && pathname === "/api/alert") {
+      return sendJson(res, 200, await ctx.tv.createAlert());
+    }
+    if (method === "POST" && pathname === "/api/replay") {
+      const { action } = await parseJsonBody(req);
+      return sendJson(res, 200, await ctx.tv.replay(String(action ?? "start") as "start" | "step" | "play" | "stop"));
+    }
+    if (method === "POST" && pathname === "/api/drawing") {
+      const { kind } = await parseJsonBody(req);
+      return sendJson(res, 200, await ctx.tv.addDrawing(String(kind ?? "horizontal") as "horizontal" | "trend"));
+    }
     return sendJson(res, 404, { ok: false, error: `Unknown endpoint: ${method} ${pathname}` });
   } catch (e) {
     const code = isGlasstapeError(e) ? e.code : "EVAL_FAILED";

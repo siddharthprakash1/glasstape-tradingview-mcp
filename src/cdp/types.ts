@@ -51,6 +51,17 @@ export interface PageDriver {
   pressKey(key: NamedKey): Promise<void>;
   /** Click at viewport coordinates (CSS pixels). */
   clickAt(x: number, y: number): Promise<void>;
+  /** Press a single character key with optional modifiers (e.g. Alt+H for drawings). */
+  pressShortcut(key: string, modifiers?: KeyModifiers): Promise<void>;
+  /** Drag the mouse from one point to another (used to draw trend lines). */
+  drag(x1: number, y1: number, x2: number, y2: number): Promise<void>;
   /** Current inner viewport size. */
   viewport(): Promise<Viewport>;
+}
+
+export interface KeyModifiers {
+  alt?: boolean;
+  ctrl?: boolean;
+  shift?: boolean;
+  meta?: boolean;
 }

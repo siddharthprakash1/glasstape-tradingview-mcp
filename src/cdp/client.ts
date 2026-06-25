@@ -3,7 +3,14 @@ import type { GlasstapeConfig } from "../config.js";
 import { GlasstapeError, toGlasstapeError } from "../util/errors.js";
 import { log } from "../util/logger.js";
 import { withRetry } from "../util/retry.js";
-import type { CdpTarget, NamedKey, PageDriver, ScreenshotOptions, Viewport } from "./types.js";
+import type {
+  CdpTarget,
+  KeyModifiers,
+  NamedKey,
+  PageDriver,
+  ScreenshotOptions,
+  Viewport,
+} from "./types.js";
 
 /** Windows virtual key codes for the named keys we support. */
 const KEY_CODES: Record<NamedKey, { code: string; vk: number }> = {
@@ -184,5 +191,34 @@ export class CdpClient implements PageDriver {
     const common = { x, y, button: "left" as const, clickCount: 1 };
     await client.Input.dispatchMouseEvent({ type: "mousePressed", ...common } as never);
     await client.Input.dispatchMouseEvent({ type: "mouseReleased", ...common } as never);
+  }
+
+  async pressShortcut(key: string, modifiers: KeyModifiers = {}): Promise<void> {
+    await this.ensureConnected();
+    const client = this.requireClient();
+    let mask = 0;
+    if (modifiers.alt) mask |= 1;
+    if (modifiers.ctrl) mask |= 2;
+    if (modifiers.meta) mask |= 4;
+    if (modifiers.shift) mask |= 8;
+    const upper = key.toUpperCase();
+    const base = {
+      modifiers: mask,
+      key,
+      code: `Key${upper}`,
+      windowsVirtualKeyCode: upper.charCodeAt(0),
+    };
+    await client.Input.dispatchKeyEvent({ type: "keyDown", ...base } as never);
+    await client.Input.dispatchKeyEvent({ type: "keyUp", ...base } as never);
+  }
+
+  async drag(x1: number, y1: number, x2: number, y2: number): Promise<void> {
+    await this.ensureConnected();
+    const client = this.requireClient();
+    const left = { button: "left" as const, clickCount: 1 };
+    await client.Input.dispatchMouseEvent({ type: "mousePressed", x: x1, y: y1, ...left } as never);
+    await client.Input.dispatchMouseEvent({ type: "mouseMoved", x: (x1 + x2) / 2, y: (y1 + y2) / 2 } as never);
+    await client.Input.dispatchMouseEvent({ type: "mouseMoved", x: x2, y: y2 } as never);
+    await client.Input.dispatchMouseEvent({ type: "mouseReleased", x: x2, y: y2, ...left } as never);
   }
 }

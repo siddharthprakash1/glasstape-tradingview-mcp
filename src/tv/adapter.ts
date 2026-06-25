@@ -197,6 +197,126 @@ export class TvAdapter {
     return { requested, matched, state };
   }
 
+  /**
+   * Scan the open menu/dialog for a row whose text / aria-label / title matches
+   * any candidate (case-insensitive) and click the first hit.
+   */
+  private async clickRowMatching(candidates: string[]): Promise<boolean> {
+    return this.driver.evaluate<boolean>(`((cands) => {
+      const rows = Array.from(document.querySelectorAll('[role="option"],[role="menuitem"],[role="row"],[data-role="menuitem"],button,[class*="item"]'));
+      const norm = (s) => (s || '').toLowerCase();
+      for (const cand of cands) {
+        if (!cand) continue;
+        for (const row of rows) {
+          const hay = norm(row.textContent) + ' ' + norm(row.getAttribute && row.getAttribute('aria-label')) + ' ' + norm(row.getAttribute && row.getAttribute('title'));
+          if (hay.includes(cand)) { row.click(); return true; }
+        }
+      }
+      return false;
+    })(${JSON.stringify(candidates.map((c) => c.toLowerCase()))})`);
+  }
+
+  /** Add an indicator by name (e.g. "RSI", "MACD", "Bollinger Bands"). */
+  async addIndicator(name: string): Promise<{ requested: string }> {
+    const requested = name.trim();
+    if (!requested) throw new GlasstapeError("INVALID_INPUT", "Indicator name must not be empty.");
+    const opened = await this.clickSelector(SELECTORS.indicatorsButton);
+    if (!opened) {
+      throw new GlasstapeError("SELECTOR_NOT_FOUND", "Could not open the Indicators dialog.", {
+        hint: "Run `glasstape doctor` and update indicatorsButton in src/tv/selectors.ts.",
+      });
+    }
+    await this.delay(450);
+    await this.focusSelector(SELECTORS.dialogSearchInput);
+    await this.delay(120);
+    await this.driver.typeText(requested);
+    await this.delay(550);
+    await this.driver.pressKey("Enter"); // add the top result
+    await this.delay(350);
+    await this.driver.pressKey("Escape"); // close the dialog
+    log.debug(`addIndicator(${requested})`);
+    return { requested };
+  }
+
+  /** Change the chart type (candles, bars, line, area, "heikin ashi", …). */
+  async setChartType(type: string): Promise<{ requested: string; matched: boolean }> {
+    const requested = type.trim();
+    if (!requested) throw new GlasstapeError("INVALID_INPUT", "Chart type must not be empty.");
+    const opened = await this.clickSelector(SELECTORS.chartTypeButton);
+    if (!opened) {
+      throw new GlasstapeError("SELECTOR_NOT_FOUND", "Could not open the chart-type menu.", {
+        hint: "Run `glasstape doctor` and update chartTypeButton in src/tv/selectors.ts.",
+      });
+    }
+    await this.delay(300);
+    const matched = await this.clickRowMatching([requested]);
+    if (!matched) await this.driver.pressKey("Escape");
+    await this.delay(300);
+    return { requested, matched };
+  }
+
+  /** Switch the multi-pane layout (e.g. "2", "2x2", "3"). Best-effort. */
+  async setLayout(spec: string): Promise<{ requested: string; matched: boolean }> {
+    const requested = spec.trim();
+    if (!requested) throw new GlasstapeError("INVALID_INPUT", "Layout must not be empty.");
+    const opened = await this.clickSelector(SELECTORS.layoutButton);
+    if (!opened) {
+      throw new GlasstapeError("SELECTOR_NOT_FOUND", "Could not open the layout picker.", {
+        hint: "Run `glasstape doctor` and update layoutButton in src/tv/selectors.ts.",
+      });
+    }
+    await this.delay(300);
+    const matched = await this.clickRowMatching([requested]);
+    if (!matched) await this.driver.pressKey("Escape");
+    await this.delay(400);
+    return { requested, matched };
+  }
+
+  /** Open the create-alert dialog. Best-effort (configuring the alert is manual). */
+  async createAlert(): Promise<{ opened: boolean }> {
+    const opened = await this.clickSelector(SELECTORS.alertButton);
+    if (!opened) {
+      throw new GlasstapeError("SELECTOR_NOT_FOUND", "Could not open the alert dialog.", {
+        hint: "Run `glasstape doctor` and update alertButton in src/tv/selectors.ts.",
+      });
+    }
+    await this.delay(400);
+    return { opened: true };
+  }
+
+  /** Control Bar Replay. action: start | step | play | stop. Best-effort. */
+  async replay(action: "start" | "step" | "play" | "stop"): Promise<{ action: string; ok: boolean }> {
+    if (action === "start" || action === "stop") {
+      const ok = await this.clickSelector(SELECTORS.replayButton); // toggles replay mode
+      await this.delay(600);
+      return { action, ok };
+    }
+    const candidates = action === "step" ? ["step forward", "forward", "next bar"] : ["play", "autoplay"];
+    const ok = await this.clickRowMatching(candidates);
+    await this.delay(300);
+    return { action, ok };
+  }
+
+  /** Add a drawing via TradingView's keyboard shortcut + placement. Best-effort. */
+  async addDrawing(kind: "horizontal" | "trend"): Promise<{ kind: string }> {
+    const vp = await this.driver.viewport();
+    const cx = Math.round(vp.width / 2);
+    const cy = Math.round(vp.height / 2);
+    await this.focusChart();
+    await this.delay(150);
+    if (kind === "horizontal") {
+      await this.driver.pressShortcut("h", { alt: true }); // Alt+H: horizontal line tool
+      await this.delay(250);
+      await this.driver.clickAt(cx, cy);
+    } else {
+      await this.driver.pressShortcut("t", { alt: true }); // Alt+T: trend line tool
+      await this.delay(250);
+      await this.driver.drag(cx - 160, cy + 40, cx + 160, cy - 60);
+    }
+    await this.delay(300);
+    return { kind };
+  }
+
   /** Capture a screenshot of the page (or a clip region). */
   async screenshot(opts?: ScreenshotOptions): Promise<string> {
     return this.driver.screenshot(opts);

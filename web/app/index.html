@@ -131,6 +131,19 @@
   .btn:hover{background:rgba(255,255,255,.1);transform:translateY(-1px)}
   .btn.primary{background:linear-gradient(180deg,var(--accent-hi),var(--accent));color:#06120e;border-color:transparent;font-weight:600}
   .btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+  .btn.sm{padding:7px 10px;font-size:12px}
+  .card input[type=text]{flex:1;background:rgba(0,0,0,.32);border:1px solid var(--line);border-radius:11px;color:var(--ink);
+    font-family:var(--mono);font-size:13px;padding:9px 12px;min-width:0}
+  .card input[type=text]::placeholder{color:var(--faint)}
+  .tlabel{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin:14px 0 6px}
+  .tlabel:first-of-type{margin-top:2px}
+  .tgrid{display:flex;flex-wrap:wrap;gap:6px}
+  .tgrid .btn{flex:1 1 auto;min-width:44px;text-align:center}
+  .btn.ct-active{border-color:var(--accent);color:var(--accent-hi)}
+  .gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .gallery img{width:100%;height:50px;object-fit:cover;border-radius:7px;border:1px solid var(--line-soft);cursor:pointer;transition:.12s}
+  .gallery img:hover{border-color:var(--accent);transform:scale(1.04)}
+  .gallery .empty{grid-column:1/-1;color:var(--faint);font-family:var(--mono);font-size:12px}
 
   #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(16px);opacity:0;transition:.22s;
     font-family:var(--mono);font-size:13px;padding:11px 18px;border-radius:12px;pointer-events:none;z-index:60;max-width:90vw}
@@ -143,8 +156,8 @@
 <header>
   <span class="brand"><span class="logo"></span>glasstape <small>· control</small></span>
   <form class="search" id="searchForm">
-    <input type="text" id="symInput" placeholder="Search symbol — BTCUSD, NASDAQ:AAPL, EURUSD…" autocomplete="off" spellcheck="false">
-    <button class="btn primary" type="submit">Go</button>
+    <input type="text" id="symInput" placeholder="Command — e.g. ethusd 4h rsi macd  ·  or just a symbol" autocomplete="off" spellcheck="false">
+    <button class="btn primary" type="submit">Run</button>
   </form>
   <div class="tfbar" id="tfBar"></div>
   <span class="spacer"></span>
@@ -156,8 +169,43 @@
   <!-- LEFT: watchlist -->
   <aside class="col left">
     <div class="card glass">
-      <h3>Watchlist <span class="act" id="wlHint">click to load</span></h3>
+      <h3>Watchlist</h3>
       <div class="wl" id="watchlist"></div>
+    </div>
+
+    <div class="card glass">
+      <h3>Tools</h3>
+
+      <label class="tlabel">Indicator</label>
+      <div class="row">
+        <input type="text" id="indInput" placeholder="RSI, MACD, EMA…" autocomplete="off">
+        <button class="btn" id="indBtn">Add</button>
+      </div>
+
+      <label class="tlabel">Chart type</label>
+      <div class="tgrid" id="ctGrid"></div>
+
+      <label class="tlabel">Drawings</label>
+      <div class="tgrid">
+        <button class="btn sm" data-draw="horizontal">+ H-line</button>
+        <button class="btn sm" data-draw="trend">+ Trend</button>
+      </div>
+
+      <label class="tlabel">Replay</label>
+      <div class="tgrid">
+        <button class="btn sm" data-replay="start">Start</button>
+        <button class="btn sm" data-replay="step">Step</button>
+        <button class="btn sm" data-replay="play">Play</button>
+        <button class="btn sm" data-replay="stop">Stop</button>
+      </div>
+
+      <label class="tlabel">More</label>
+      <div class="tgrid">
+        <button class="btn sm" id="alertBtn">Alert</button>
+        <button class="btn sm" data-layout="1">1</button>
+        <button class="btn sm" data-layout="2">2</button>
+        <button class="btn sm" data-layout="2x2">2×2</button>
+      </div>
     </div>
   </aside>
 
@@ -205,6 +253,11 @@
     </div>
 
     <div class="card glass">
+      <h3>Gallery <span class="act" id="capBtn">📸 capture</span></h3>
+      <div class="gallery" id="gallery"><div class="empty">No captures yet.</div></div>
+    </div>
+
+    <div class="card glass">
       <h3>Activity</h3>
       <div class="log" id="log"><div class="empty">No actions yet.</div></div>
     </div>
@@ -225,6 +278,7 @@
   const toast = (msg, ok=true) => { const t=$("toast"); t.textContent=msg; t.className=(ok?"ok":"err")+" show";
     clearTimeout(t._t); t._t=setTimeout(()=>t.className=t.className.replace("show",""),2600); };
   const escapeHtml = (s)=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  const H = { "content-type": "application/json" };
 
   async function api(path, opts){
     const res = await fetch(path, opts);
@@ -320,9 +374,89 @@
   function download(){ if(!lastShotUrl){ refreshShot(); return; } const a=document.createElement("a");
     a.href=lastShotUrl; a.download="glasstape-"+Date.now()+".png"; a.click(); }
 
+  // ---- chart-type buttons ----
+  const CHART_TYPES=[["Candles","candles"],["Line","line"],["Area","area"],["Heikin","heikin ashi"]];
+  function buildCt(){ const g=$("ctGrid"); CHART_TYPES.forEach(([label,val])=>{ const b=document.createElement("button");
+    b.className="btn sm"; b.textContent=label; b.onclick=()=>setChartType(val,b); g.appendChild(b); }); }
+
+  // ---- tools ----
+  async function addIndicator(name){
+    const n=(name!==undefined?name:$("indInput").value).trim(); if(!n)return;
+    try{ const r=await api("/api/indicator",{method:"POST",headers:H,body:JSON.stringify({name:n})});
+      toast("Indicator + "+r.requested); logAct("indicator + "+r.requested); $("indInput").value=""; scheduleShot(1100);
+    }catch(e){ toast(e.message,false); logAct("indicator failed: "+e.message,false); }
+  }
+  async function setChartType(type,btn){
+    try{ const r=await api("/api/chart-type",{method:"POST",headers:H,body:JSON.stringify({type})});
+      toast(r.matched?("Chart → "+type):("no match: "+type), r.matched!==false); logAct("chart type → "+type, r.matched!==false);
+      if(r.matched){ document.querySelectorAll("#ctGrid .btn").forEach(b=>b.classList.remove("ct-active")); if(btn) btn.classList.add("ct-active"); }
+      scheduleShot(900);
+    }catch(e){ toast(e.message,false); }
+  }
+  async function addDrawing(kind){
+    try{ await api("/api/drawing",{method:"POST",headers:H,body:JSON.stringify({kind})});
+      toast("Drawing: "+kind); logAct("drawing + "+kind); scheduleShot(900);
+    }catch(e){ toast(e.message,false); logAct("drawing failed: "+e.message,false); }
+  }
+  async function doReplay(action){
+    try{ const r=await api("/api/replay",{method:"POST",headers:H,body:JSON.stringify({action})});
+      toast("Replay "+action+(r.ok===false?" (no control)":""), r.ok!==false); logAct("replay "+action, r.ok!==false); scheduleShot(900);
+    }catch(e){ toast(e.message,false); }
+  }
+  async function doAlert(){
+    try{ await api("/api/alert",{method:"POST",headers:H}); toast("Alert dialog opened"); logAct("alert dialog opened"); scheduleShot(700);
+    }catch(e){ toast(e.message,false); }
+  }
+  async function setLayout(layout){
+    try{ const r=await api("/api/layout",{method:"POST",headers:H,body:JSON.stringify({layout})});
+      toast(r.matched?("Layout → "+layout):("no match: "+layout), r.matched!==false); logAct("layout → "+layout, r.matched!==false); scheduleShot(900);
+    }catch(e){ toast(e.message,false); }
+  }
+
+  // ---- command bar (e.g. "ethusd 4h rsi macd") ----
+  const TF_CODES={"1m":"1","5m":"5","15m":"15","30m":"30","1h":"60","60":"60","4h":"240","240":"240","1d":"D","d":"D","1w":"W","w":"W","1mo":"1mo","m":"1"};
+  const KNOWN_IND=["rsi","macd","ema","sma","wma","vwap","bb","bollinger","stochastic","stoch","atr","adx","obv","ichimoku","supertrend","volume","mfi","cci"];
+  async function runCommand(){
+    const raw=$("symInput").value.trim(); if(!raw) return;
+    const tokens=raw.split(/[\s,]+/).filter(Boolean);
+    let symbol=null; const tfs=[]; const inds=[];
+    for(const tok of tokens){ const low=tok.toLowerCase();
+      if(TF_CODES[low]!==undefined){ tfs.push(TF_CODES[low]); }
+      else if(KNOWN_IND.includes(low)){ inds.push(tok.toUpperCase()); }
+      else if(/^[a-z0-9:._-]{2,}$/i.test(tok) && !symbol){ symbol=tok.toUpperCase(); }
+    }
+    $("symInput").value="";
+    if(symbol) await setSymbol(symbol);
+    for(const tf of tfs) await setTf(tf);
+    for(const ind of inds) await addIndicator(ind);
+    if(!symbol && !tfs.length && !inds.length) toast("Nothing recognized — try 'ethusd 4h rsi'",false);
+  }
+
+  // ---- screenshot gallery ----
+  const gallery=[];
+  async function capture(){
+    try{ const res=await fetch("/api/screenshot?t="+Date.now()); if(!res.ok) throw new Error("capture failed");
+      const blob=await res.blob(); const url=URL.createObjectURL(blob);
+      gallery.unshift({url,time:new Date().toLocaleTimeString()});
+      if(gallery.length>9){ URL.revokeObjectURL(gallery.pop().url); }
+      renderGallery(); toast("Captured"); logAct("captured screenshot");
+    }catch(e){ toast("capture failed",false); }
+  }
+  function renderGallery(){ const g=$("gallery");
+    if(!gallery.length){ g.innerHTML='<div class="empty">No captures yet.</div>'; return; }
+    g.innerHTML=gallery.map(c=>`<img src="${c.url}" title="${c.time}">`).join("");
+    g.querySelectorAll("img").forEach(img=>img.onclick=()=>window.open(img.src,"_blank")); }
+
   // ---- wire ----
-  buildTf(); buildWl();
-  $("searchForm").addEventListener("submit",(e)=>{ e.preventDefault(); setSymbol(); });
+  buildTf(); buildWl(); buildCt();
+  $("searchForm").addEventListener("submit",(e)=>{ e.preventDefault(); runCommand(); });
+  $("indBtn").onclick=()=>addIndicator();
+  $("indInput").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); addIndicator(); }});
+  document.querySelectorAll("[data-draw]").forEach(b=>b.onclick=()=>addDrawing(b.dataset.draw));
+  document.querySelectorAll("[data-replay]").forEach(b=>b.onclick=()=>doReplay(b.dataset.replay));
+  document.querySelectorAll("[data-layout]").forEach(b=>b.onclick=()=>setLayout(b.dataset.layout));
+  $("alertBtn").onclick=doAlert;
+  $("capBtn").onclick=capture;
   $("legendBtn").onclick=readLegend; $("pineBtn").onclick=injectPine;
   $("refreshBtn").onclick=refreshShot; $("dlBtn").onclick=download; $("autoChk").onchange=autoLoop;
   $("stRefresh").onclick=refreshState;

@@ -103,6 +103,46 @@ export const SELECTORS = {
       'button[aria-label*="Alert" i]',
     ],
   },
+  indicatorsButton: {
+    key: "indicatorsButton",
+    description: "Toolbar button that opens the Indicators dialog.",
+    optional: true,
+    strategies: [
+      '#header-toolbar-indicators',
+      '[data-name="open-indicators-dialog"]',
+      'button[aria-label*="Indicators" i]',
+    ],
+  },
+  dialogSearchInput: {
+    key: "dialogSearchInput",
+    description: "Search input inside an open dialog (indicators, etc.). Transient.",
+    optional: true,
+    strategies: [
+      'div[role="dialog"] input[type="text"]',
+      'input[data-role="search"]',
+      'input[placeholder*="Search" i]',
+    ],
+  },
+  chartTypeButton: {
+    key: "chartTypeButton",
+    description: "Toolbar button that opens the chart-type (candles/line/…) menu.",
+    optional: true,
+    strategies: [
+      '#header-toolbar-chart-styles',
+      '[data-name="chart-styles-button"]',
+      'button[aria-label*="chart type" i]',
+    ],
+  },
+  layoutButton: {
+    key: "layoutButton",
+    description: "Toolbar button that opens the multi-pane layout picker.",
+    optional: true,
+    strategies: [
+      '#header-toolbar-chart-layout',
+      '[data-name="layout-button"]',
+      'button[aria-label*="layout" i]',
+    ],
+  },
 } satisfies Record<string, SelectorDef>;
 
 export type SelectorKey = keyof typeof SELECTORS;
