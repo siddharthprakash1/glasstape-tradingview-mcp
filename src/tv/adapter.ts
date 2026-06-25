@@ -74,10 +74,15 @@ export class TvAdapter {
       const q = (sels) => { for (const s of sels) { try { const el = document.querySelector(s); if (el) return el; } catch (e) {} } return null; };
       const titleEl = q(${JSON.stringify(SELECTORS.legendTitle.strategies)});
       const intervalEl = q(${JSON.stringify(SELECTORS.intervalButton.strategies)});
+      const docTitle = document.title || '';
+      // The document title is the cleanest source of the ticker (e.g. "AAPL 293.08 …").
+      const m = docTitle.match(/^\\s*([A-Za-z0-9:._-]{1,20})/);
+      const symFromTitle = m ? m[1] : null;
+      const symFromLegend = titleEl ? (titleEl.textContent || '').replace(/\\s+/g, ' ').trim() : null;
       return {
-        symbol: titleEl ? (titleEl.textContent || '').trim() : null,
-        timeframe: intervalEl ? (intervalEl.textContent || '').trim() : null,
-        title: document.title || '',
+        symbol: symFromTitle || symFromLegend || null,
+        timeframe: intervalEl ? (intervalEl.textContent || '').replace(/\\s+/g, ' ').trim() : null,
+        title: docTitle,
         href: location.href || ''
       };
     })()`;

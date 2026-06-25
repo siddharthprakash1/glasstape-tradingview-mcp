@@ -45,11 +45,14 @@ export const SELECTORS = {
   },
   symbolSearchInput: {
     key: "symbolSearchInput",
-    description: "Text input inside the open symbol search dialog.",
+    description: "Text input inside the symbol search dialog (only exists while the dialog is open).",
+    // Transient: present only when the search dialog is open, so it can't resolve
+    // during a resting self-test. setSymbol opens the dialog before using it.
+    optional: true,
     strategies: [
+      'input[placeholder*="Symbol" i]',
       'input[data-role="search"]',
       'input[aria-label*="symbol" i]',
-      '.search-ZXzPWcCf input',
       'div[role="dialog"] input[type="text"]',
     ],
   },

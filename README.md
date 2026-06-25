@@ -49,7 +49,7 @@ A healthy check looks like:
   CDP        connected  (127.0.0.1:9222)
   target     BTCUSD · 63,000 — TradingView
   TradingView yes
-  selectors  6/6 resolving
+  selectors  5/5 resolving
 ```
 
 ### Connect it to Claude Code
