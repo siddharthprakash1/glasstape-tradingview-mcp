@@ -58,7 +58,7 @@ describe("runHealthCheck", () => {
     expect(r.issues.join(" ")).toContain("launch TradingView");
   });
 
-  it("flags partially-broken selectors but stays ok if some resolve", async () => {
+  it("is not ok and names the broken required selector", async () => {
     const ctx = fakeCtx({
       isTradingView: async () => true,
       selfTest: async () => ({
@@ -67,8 +67,24 @@ describe("runHealthCheck", () => {
       }),
     });
     const r = await runHealthCheck(ctx);
-    expect(r.ok).toBe(true);
+    expect(r.ok).toBe(false);
     expect(r.selectorsOk).toBe(1);
+    expect(r.selectorsTotal).toBe(2);
     expect(r.issues.join(" ")).toContain("symbolSearchButton");
+  });
+
+  it("stays healthy when only an OPTIONAL (Phase-2) selector is missing", async () => {
+    const ctx = fakeCtx({
+      isTradingView: async () => true,
+      selfTest: async () => ({
+        chartCanvas: { ok: true, strategyIndex: 0 }, // required
+        replayButton: { ok: false, strategyIndex: null }, // optional → must not degrade
+      }),
+    });
+    const r = await runHealthCheck(ctx);
+    expect(r.ok).toBe(true);
+    expect(r.selectorsTotal).toBe(1); // optional excluded from the count
+    expect(r.selectorsOk).toBe(1);
+    expect(r.issues).toHaveLength(0);
   });
 });

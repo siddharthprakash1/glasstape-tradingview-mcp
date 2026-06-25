@@ -1,7 +1,19 @@
 import type { GlasstapeContext } from "../context.js";
 import { detectVersion } from "../tv/version.js";
-import type { SelfTestReport } from "../tv/selectors.js";
+import { SELECTORS, type SelectorDef, type SelfTestReport } from "../tv/selectors.js";
 import { isGlasstapeError } from "../util/errors.js";
+
+/** Selector keys that are optional (Phase-2 / plan-gated) and must not degrade health. */
+const OPTIONAL_SELECTORS = new Set(
+  Object.entries(SELECTORS)
+    .filter(([, def]) => (def as SelectorDef).optional)
+    .map(([key]) => key),
+);
+
+/** Whether a selector key is required for a healthy verdict (optional hooks are not). */
+function isRequired(key: string): boolean {
+  return !OPTIONAL_SELECTORS.has(key);
+}
 
 export interface HealthReport {
   /** Overall verdict: connected, attached to TradingView, and selectors resolving. */
@@ -67,18 +79,18 @@ export async function runHealthCheck(ctx: GlasstapeContext): Promise<HealthRepor
     }
   }
 
-  const entries = Object.values(selectors);
-  const selectorsTotal = entries.length;
-  const selectorsOk = entries.filter((s) => s.ok).length;
+  // Verdict is based on REQUIRED selectors only; optional (Phase-2) hooks are
+  // reported in `selectors` but never degrade health.
+  const requiredEntries = Object.entries(selectors).filter(([k]) => isRequired(k));
+  const selectorsTotal = requiredEntries.length;
+  const selectorsOk = requiredEntries.filter(([, v]) => v.ok).length;
   if (connected && tradingView && selectorsTotal > 0 && selectorsOk < selectorsTotal) {
-    const broken = Object.entries(selectors)
-      .filter(([, v]) => !v.ok)
-      .map(([k]) => k);
-    issues.push(`Some UI selectors did not resolve (${broken.join(", ")}). TradingView may have updated — update src/tv/selectors.ts.`);
+    const broken = requiredEntries.filter(([, v]) => !v.ok).map(([k]) => k);
+    issues.push(`Some required UI selectors did not resolve (${broken.join(", ")}). TradingView may have updated — update src/tv/selectors.ts.`);
   }
 
   const target = ctx.cdp.targetInfo;
-  const ok = connected && tradingView && selectorsTotal > 0 && selectorsOk > 0;
+  const ok = connected && tradingView && selectorsTotal > 0 && selectorsOk === selectorsTotal;
 
   return {
     ok,

@@ -63,6 +63,7 @@ export function buildServer(ctx: GlasstapeContext): Server {
       const result = await tool.handler(ctx, args);
       return { content: toContent(result) };
     } catch (e) {
+      const code = e instanceof z.ZodError ? "INVALID_INPUT" : isGlasstapeError(e) ? e.code : "EVAL_FAILED";
       const message =
         e instanceof z.ZodError
           ? `Invalid arguments: ${e.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`
@@ -71,8 +72,14 @@ export function buildServer(ctx: GlasstapeContext): Server {
             : e instanceof Error
               ? e.message
               : String(e);
-      log.warn(`tool ${tool.name} failed: ${message}`);
-      return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
+      log.warn(`tool ${tool.name} failed [${code}]: ${message}`);
+      // Surface the machine-readable code both in the text (for the model) and as
+      // structuredContent (for programmatic clients) — the diagnosis is the point.
+      return {
+        content: [{ type: "text", text: `Error [${code}]: ${message}` }],
+        structuredContent: { ok: false, code },
+        isError: true,
+      };
     }
   });
 

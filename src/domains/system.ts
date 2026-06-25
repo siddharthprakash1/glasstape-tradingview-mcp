@@ -13,7 +13,7 @@ export const health = defineTool({
     const report = await runHealthCheck(ctx);
     const summary = report.ok
       ? `Healthy — connected to "${report.cdp.targetTitle ?? "TradingView"}", ${report.selectorsOk}/${report.selectorsTotal} selectors OK${report.version ? `, v${report.version}` : ""}.`
-      : `Unhealthy — ${report.issues[0] ?? "see details"}.`;
+      : `Unhealthy — ${report.issues[0] ?? "see details."}`;
     return { text: summary, data: report };
   },
 });

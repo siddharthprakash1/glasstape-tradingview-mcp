@@ -15,6 +15,12 @@ export interface SelectorDef {
   description: string;
   /** Ordered CSS selector strategies; first match wins. */
   strategies: string[];
+  /**
+   * Optional hooks belong to features that may be absent (plan-gated, or not yet
+   * wired to a tool). The doctor self-test still reports them, but a missing
+   * optional hook does NOT degrade the overall health verdict.
+   */
+  optional?: boolean;
 }
 
 export const SELECTORS = {
@@ -76,7 +82,8 @@ export const SELECTORS = {
   },
   replayButton: {
     key: "replayButton",
-    description: "Bar Replay toggle in the toolbar.",
+    description: "Bar Replay toggle in the toolbar (Phase 2; plan-gated).",
+    optional: true,
     strategies: [
       '#header-toolbar-replay',
       '[data-name="replay"]',
@@ -85,7 +92,8 @@ export const SELECTORS = {
   },
   alertButton: {
     key: "alertButton",
-    description: "Create-alert control.",
+    description: "Create-alert control (Phase 2).",
+    optional: true,
     strategies: [
       '#header-toolbar-alerts',
       '[data-name="alerts"]',

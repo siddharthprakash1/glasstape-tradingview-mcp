@@ -49,7 +49,7 @@ A healthy check looks like:
   CDP        connected  (127.0.0.1:9222)
   target     BTCUSD · 63,000 — TradingView
   TradingView yes
-  selectors  7/7 resolving
+  selectors  6/6 resolving
 ```
 
 ### Connect it to Claude Code
@@ -153,6 +153,8 @@ glasstape talks to the Electron debug interface TradingView Desktop exposes when
 ## Legal & safety
 
 > ⚠️ **Unofficial and experimental.** glasstape is **not affiliated with, endorsed by, or associated with TradingView, Inc.** It drives undocumented internal interfaces over CDP and **can break on any TradingView update**. You are responsible for complying with [TradingView's Terms of Use](https://www.tradingview.com/policies/) — automated or non-display use of their data may conflict with those terms. Provided for **personal, educational, and research use**. All processing is local.
+>
+> **Security note:** connecting an MCP client grants it the ability to run actions in your logged-in TradingView session. The `tv_evaluate` tool in particular executes arbitrary JavaScript inside the page (an intentional power-user escape hatch) and therefore has full access to that session's state. Only connect clients you trust, and consider removing `tv_evaluate` from `src/domains/system.ts` if you don't need it.
 
 ## License
 

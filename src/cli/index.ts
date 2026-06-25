@@ -172,7 +172,8 @@ function cmdTools(): number {
   return 0;
 }
 
-async function main(): Promise<void> {
+/** Returns true if the process should stay alive (serve mode), false otherwise. */
+async function main(): Promise<boolean> {
   const [command, ...rest] = process.argv.slice(2);
 
   if (command === "serve") {
@@ -180,7 +181,7 @@ async function main(): Promise<void> {
     setLogLevel(process.env.GLASSTAPE_LOG ? (process.env.GLASSTAPE_LOG as never) : "info");
     const ctx = createContext();
     await startServer(ctx);
-    return; // stays alive on the transport
+    return true; // keep the process alive on the stdio transport
   }
 
   let code = 0;
@@ -206,10 +207,16 @@ async function main(): Promise<void> {
       code = 2;
   }
   process.exitCode = code;
+  return false;
 }
 
-main().catch((e) => {
-  const message = isGlasstapeError(e) ? e.toUserString() : e instanceof Error ? e.message : String(e);
-  log.error(message);
-  process.exitCode = 1;
-});
+main()
+  .then((keepAlive) => {
+    // For one-shot commands, exit explicitly so a lingering CDP socket can't hang the CLI.
+    if (!keepAlive) process.exit(process.exitCode ?? 0);
+  })
+  .catch((e) => {
+    const message = isGlasstapeError(e) ? e.toUserString() : e instanceof Error ? e.message : String(e);
+    log.error(message);
+    process.exit(1);
+  });

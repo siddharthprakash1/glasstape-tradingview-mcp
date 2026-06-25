@@ -22,7 +22,7 @@ export function loadConfig(overrides: Partial<GlasstapeConfig> = {}): GlasstapeC
   return {
     host: process.env.GLASSTAPE_HOST ?? "127.0.0.1",
     port: intFromEnv("GLASSTAPE_PORT", 9222),
-    targetMatchers: ["tradingview", "tv-", "TradingView"],
+    targetMatchers: ["tradingview"],
     evalTimeoutMs: intFromEnv("GLASSTAPE_EVAL_TIMEOUT_MS", 15_000),
     ...overrides,
   };
