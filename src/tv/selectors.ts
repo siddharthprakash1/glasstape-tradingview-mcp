@@ -118,6 +118,7 @@ export const SELECTORS = {
     description: "Search input inside an open dialog (indicators, etc.). Transient.",
     optional: true,
     strategies: [
+      "#indicators-dialog-search-input",
       'input[placeholder*="Search" i]',
       'input[data-role="search"]',
       'div[role="dialog"] input[type="text"]',

@@ -92,6 +92,15 @@ export class CdpClient implements PageDriver {
     );
 
     await Promise.all([client.Runtime.enable(), client.Page.enable()]);
+    // Make the page always believe it has focus. TradingView gates some features
+    // (e.g. the indicators dialog search) on document.hasFocus(), which is false
+    // when the window isn't the OS-frontmost one — so without this, dialog
+    // searches silently don't filter when driven headlessly.
+    try {
+      await client.Emulation.setFocusEmulationEnabled({ enabled: true });
+    } catch {
+      /* not all targets support Emulation; ignore */
+    }
     client.on("disconnect", () => {
       this.client = undefined;
       log.warn("CDP connection dropped; will reconnect on next call.");
@@ -180,10 +189,15 @@ export class CdpClient implements PageDriver {
     await this.ensureConnected();
     const client = this.requireClient();
     for (const ch of text) {
-      // `text` on keyDown inserts the char AND fires keydown/input — needed for
-      // React search boxes that filter on keystrokes (e.g. the indicators dialog).
-      await client.Input.dispatchKeyEvent({ type: "keyDown", text: ch, unmodifiedText: ch, key: ch } as never);
-      await client.Input.dispatchKeyEvent({ type: "keyUp", key: ch } as never);
+      // Full-fidelity trusted key events: code + virtual key code so custom
+      // search handlers (TradingView is not React) register the keystroke, and
+      // `text` so the character is actually inserted.
+      const upper = ch.toUpperCase();
+      const code = /[a-z]/i.test(ch) ? `Key${upper}` : /[0-9]/.test(ch) ? `Digit${ch}` : undefined;
+      const vk = upper.charCodeAt(0);
+      const base = { key: ch, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk };
+      await client.Input.dispatchKeyEvent({ type: "keyDown", text: ch, unmodifiedText: ch, ...base } as never);
+      await client.Input.dispatchKeyEvent({ type: "keyUp", ...base } as never);
     }
   }
 

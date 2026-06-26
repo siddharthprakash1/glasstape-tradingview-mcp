@@ -124,7 +124,7 @@ describe("TvAdapter.addIndicator", () => {
     const r = await adapter.addIndicator("RSI");
     expect(r.requested).toBe("RSI");
     expect(r.added).toBe(true);
-    expect(fake.calls.some((c) => c.method === "evaluate" && String(c.arg).includes("RSI"))).toBe(true);
+    expect(fake.calls.find((c) => c.method === "typeKeys")?.arg).toBe("RSI");
     expect(fake.calls.some((c) => c.method === "pressKey" && c.arg === "Escape")).toBe(true);
   });
   it("rejects empty names", async () => {

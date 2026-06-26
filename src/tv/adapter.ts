@@ -139,32 +139,6 @@ export class TvAdapter {
     return this.driver.evaluate<boolean>(expr);
   }
 
-  /**
-   * Set a (React-controlled) input's value so the framework's onChange actually
-   * fires. Setting `.value` or using insertText/keys does NOT trigger React's
-   * tracked setter, so search boxes never filter; this uses the native value
-   * setter + a bubbling `input` event, which is the reliable cross-React way.
-   */
-  private async setSearchValue(def: SelectorDef, value: string): Promise<boolean> {
-    return this.driver.evaluate<boolean>(`((sels, val) => {
-      for (const s of sels) {
-        try {
-          const el = document.querySelector(s);
-          if (el) {
-            const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-            const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-            el.focus();
-            setter.call(el, val);
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            return true;
-          }
-        } catch (e) {}
-      }
-      return false;
-    })(${JSON.stringify(def.strategies)}, ${JSON.stringify(value)})`);
-  }
-
   /** Poll until any strategy for a selector resolves, up to timeoutMs. */
   private async waitFor(def: SelectorDef, timeoutMs = 3500): Promise<boolean> {
     const steps = Math.max(1, Math.ceil(timeoutMs / 300));
@@ -287,8 +261,9 @@ export class TvAdapter {
       });
     }
     await this.delay(700);
-    // Set the search value through React's native setter so the dialog actually filters.
-    await this.setSearchValue(SELECTORS.dialogSearchInput, requested);
+    await this.clickSelector(SELECTORS.dialogSearchInput); // real-click to focus the search box
+    await this.delay(200);
+    await this.driver.typeKeys(requested); // trusted key events; focus emulation lets the search actually filter
     // Poll for the results list instead of guessing a fixed delay.
     const ready = await this.waitFor(SELECTORS.indicatorResult, 3500);
     // The dialog adds a study when its top result row is clicked (Enter does NOT add).

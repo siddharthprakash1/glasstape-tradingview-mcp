@@ -100,9 +100,13 @@ These drive TradingView's real UI, so reliability varies by build. Current statu
 
 | Control | Status |
 |---|---|
-| symbol, timeframe, chart type, replay, screenshot, health | ✅ verified working |
-| alerts, layout, drawings | ⚠️ best-effort — the action fires but the result isn't always confirmable per build |
-| indicators (add by name) | ❌ opens the dialog, but auto-selecting a result is unreliable on current builds (the search box resists synthetic input); needs per-build tuning |
+| symbol, timeframe, chart type, **indicators**, replay, alerts, screenshot, health | ✅ verified working |
+| layout, drawings | ⚠️ best-effort — the action fires but the result isn't always confirmable per build |
+
+The bridge enables **CDP focus emulation** on connect (`Emulation.setFocusEmulationEnabled`)
+so the page always reports `document.hasFocus() === true`. TradingView gates dialog
+searches (e.g. the indicators dialog) on focus, so without this they silently fail to
+filter when the window isn't the OS-frontmost one — this is what makes headless control work.
 
 When something misbehaves, run `glasstape doctor` — every fragile hook lives in `src/tv/selectors.ts`.
 
