@@ -100,8 +100,9 @@ These drive TradingView's real UI, so reliability varies by build. Current statu
 
 | Control | Status |
 |---|---|
-| symbol, timeframe, chart type, **indicators**, replay, alerts, screenshot, health | ✅ verified working |
-| layout, drawings | ⚠️ best-effort — the action fires but the result isn't always confirmable per build |
+| symbol, timeframe, chart type, indicators, replay, alerts, screenshot, health, **horizontal-line drawing** | ✅ verified working |
+| trend-line drawing | TradingView platform limit — its two-point canvas drawing doesn't complete from synthetic input (single-point drawings like horizontal lines do). `add_drawing` returns `placed:false` honestly rather than pretending. |
+| multi-chart layout | TradingView plan limit — multi-chart grids require a paid plan. On single-chart plans `set_layout` returns `applied:false` with a clear note (it drives the internal layout API, which the plan no-ops). |
 
 The bridge enables **CDP focus emulation** on connect (`Emulation.setFocusEmulationEnabled`)
 so the page always reports `document.hasFocus() === true`. TradingView gates dialog

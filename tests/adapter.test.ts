@@ -39,6 +39,9 @@ class FakePageDriver implements PageDriver {
   async drag(x1: number, y1: number, x2: number, y2: number): Promise<void> {
     this.calls.push({ method: "drag", arg: { x1, y1, x2, y2 } });
   }
+  async moveTo(x: number, y: number): Promise<void> {
+    this.calls.push({ method: "moveTo", arg: { x, y } });
+  }
   async viewport(): Promise<Viewport> {
     return { width: 1200, height: 800 };
   }
@@ -153,13 +156,14 @@ describe("TvAdapter.addDrawing", () => {
     expect(sc?.arg).toMatchObject({ key: "h" });
     expect(fake.calls.some((c) => c.method === "clickAt")).toBe(true);
   });
-  it("uses Alt+T + a drag for a trend line", async () => {
+  it("uses the trend tool + click-move-click for a trend line", async () => {
     const fake = new FakePageDriver();
     fake.onEvaluate = () => true;
     const adapter = new TvAdapter(fake, instant);
     await adapter.addDrawing("trend");
     expect(fake.calls.find((c) => c.method === "pressShortcut")?.arg).toMatchObject({ key: "t" });
-    expect(fake.calls.some((c) => c.method === "drag")).toBe(true);
+    expect(fake.calls.some((c) => c.method === "moveTo")).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "clickAt").length).toBeGreaterThanOrEqual(2);
   });
 });
 

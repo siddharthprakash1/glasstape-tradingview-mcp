@@ -146,12 +146,11 @@ export const SELECTORS = {
   },
   layoutButton: {
     key: "layoutButton",
-    description: "Toolbar button that opens the multi-pane layout picker.",
+    description: "Toolbar 'Layout setup' button (named-layout management; multi-chart grids are set via the internal API).",
     optional: true,
     strategies: [
-      '#header-toolbar-chart-layout',
-      '[data-name="layout-button"]',
-      'button[aria-label*="layout" i]',
+      "#header-toolbar-layouts",
+      'button[aria-label*="Layout setup" i]',
     ],
   },
 } satisfies Record<string, SelectorDef>;

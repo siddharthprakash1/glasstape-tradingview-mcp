@@ -238,6 +238,12 @@ export class CdpClient implements PageDriver {
     await client.Input.dispatchKeyEvent({ type: "keyUp", ...base } as never);
   }
 
+  async moveTo(x: number, y: number): Promise<void> {
+    await this.ensureConnected();
+    const client = this.requireClient();
+    await client.Input.dispatchMouseEvent({ type: "mouseMoved", x, y } as never);
+  }
+
   async drag(x1: number, y1: number, x2: number, y2: number): Promise<void> {
     await this.ensureConnected();
     const client = this.requireClient();

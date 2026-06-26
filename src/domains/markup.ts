@@ -25,11 +25,11 @@ export const setChartType = defineTool({
 
 export const setLayout = defineTool({
   name: "set_layout",
-  description: "Switch the multi-pane layout (e.g. '1', '2', '2x2', '3'). Best-effort.",
+  description: "Switch the multi-pane layout (e.g. '1', '2', '2v', '2x2'). Requires a TradingView plan with multi-chart grids.",
   input: { layout: z.string().min(1).describe("Layout spec.") },
   handler: async (ctx, args) => {
     const r = await ctx.tv.setLayout(args.layout);
-    return { text: r.matched ? `Layout → ${r.requested}.` : `No layout matched '${r.requested}'.`, data: r };
+    return { text: r.applied ? `Layout → ${r.requested}.` : (r.note ?? `Layout '${r.requested}' not applied.`), data: r };
   },
 });
 
@@ -55,11 +55,16 @@ export const replay = defineTool({
 
 export const addDrawing = defineTool({
   name: "add_drawing",
-  description: "Add a drawing to the chart: a horizontal line at center, or a trend line. Best-effort (coordinate-based).",
+  description: "Add a drawing: a horizontal line at center (reliable), or a trend line (two-point, best-effort). Returns whether placement was confirmed.",
   input: { kind: z.enum(["horizontal", "trend"]).describe("Drawing kind.") },
   handler: async (ctx, args) => {
     const r = await ctx.tv.addDrawing(args.kind);
-    return { text: `Added ${r.kind} drawing.`, data: r };
+    return {
+      text: r.placed
+        ? `Placed ${r.kind} drawing.`
+        : `Attempted ${r.kind} drawing — placement not confirmed (TradingView canvas drawings can need manual completion).`,
+      data: r,
+    };
   },
 });
 

@@ -57,6 +57,8 @@ export interface PageDriver {
   pressShortcut(key: string, modifiers?: KeyModifiers): Promise<void>;
   /** Drag the mouse from one point to another (used to draw trend lines). */
   drag(x1: number, y1: number, x2: number, y2: number): Promise<void>;
+  /** Move the mouse (no button) to a point — needed between clicks for two-point drawings. */
+  moveTo(x: number, y: number): Promise<void>;
   /** Current inner viewport size. */
   viewport(): Promise<Viewport>;
 }

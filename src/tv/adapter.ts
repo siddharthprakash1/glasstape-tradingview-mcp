@@ -291,21 +291,39 @@ export class TvAdapter {
     return { requested, matched };
   }
 
-  /** Switch the multi-pane layout (e.g. "2", "2x2", "3"). Best-effort. */
-  async setLayout(spec: string): Promise<{ requested: string; matched: boolean }> {
+  /**
+   * Switch the multi-pane layout via TradingView's internal chart-widget
+   * collection (the toolbar has no grid button on all plans). Multi-chart grids
+   * are a paid feature, so on plans that don't include them the call is accepted
+   * but the layout stays single — which we detect and report honestly.
+   */
+  async setLayout(spec: string): Promise<{ requested: string; code: string; applied: boolean; note?: string }> {
     const requested = spec.trim();
     if (!requested) throw new GlasstapeError("INVALID_INPUT", "Layout must not be empty.");
-    const opened = await this.clickSelector(SELECTORS.layoutButton);
-    if (!opened) {
-      throw new GlasstapeError("SELECTOR_NOT_FOUND", "Could not open the layout picker.", {
-        hint: "Run `glasstape doctor` and update layoutButton in src/tv/selectors.ts.",
-      });
-    }
-    await this.delay(300);
-    const matched = await this.clickRowMatching([requested]);
-    if (!matched) await this.driver.pressKey("Escape");
-    await this.delay(400);
-    return { requested, matched };
+    const map: Record<string, string> = {
+      "1": "s", single: "s", "2": "2h", "2h": "2h", "2v": "2v",
+      "3": "3h", "3h": "3h", "3v": "3v", "4": "4", "2x2": "4", "6": "6", "8": "8",
+    };
+    const code = map[requested.toLowerCase()] ?? requested;
+    await this.driver.evaluate(`(() => {
+      try {
+        const c = window._exposed_chartWidgetCollection;
+        if (c && typeof c.setChartLayoutWithUndo === 'function') c.setChartLayoutWithUndo(${JSON.stringify(code)});
+      } catch (e) {}
+    })()`);
+    await this.delay(700);
+    const after = await this.driver.evaluate<string>(
+      `(() => { try { return String(window._exposed_chartWidgetCollection._layoutType); } catch (e) { return ''; } })()`,
+    );
+    const applied = after === code;
+    return {
+      requested,
+      code,
+      applied,
+      note: applied
+        ? undefined
+        : "Layout stayed single — multi-chart grids require a TradingView plan that includes them.",
+    };
   }
 
   /** Open the create-alert dialog. Best-effort (configuring the alert is manual). */
@@ -333,8 +351,19 @@ export class TvAdapter {
     return { action, ok };
   }
 
-  /** Add a drawing via TradingView's keyboard shortcut + placement. Best-effort. */
-  async addDrawing(kind: "horizontal" | "trend"): Promise<{ kind: string }> {
+  /** Read the undo control's aria-label, which names the last undoable action. */
+  private async readUndoLabel(): Promise<string> {
+    return this.driver.evaluate<string>(
+      `(() => { const b = document.querySelector('#header-toolbar-undo-redo button'); return b ? (b.getAttribute('aria-label') || '') : ''; })()`,
+    );
+  }
+
+  /**
+   * Add a drawing. Horizontal lines (single click) place reliably; trend lines
+   * need a two-point canvas interaction that synthetic events don't always
+   * complete, so `placed` is verified against the undo label per kind.
+   */
+  async addDrawing(kind: "horizontal" | "trend"): Promise<{ kind: string; placed: boolean }> {
     const vp = await this.driver.viewport();
     const cx = Math.round(vp.width / 2);
     const cy = Math.round(vp.height / 2);
@@ -342,15 +371,21 @@ export class TvAdapter {
     await this.delay(150);
     if (kind === "horizontal") {
       await this.driver.pressShortcut("h", { alt: true }); // Alt+H: horizontal line tool
-      await this.delay(250);
+      await this.delay(300);
       await this.driver.clickAt(cx, cy);
     } else {
-      await this.driver.pressShortcut("t", { alt: true }); // Alt+T: trend line tool
+      await this.driver.pressShortcut("t", { alt: true }); // trend line tool
+      await this.delay(300);
+      await this.driver.clickAt(cx - 160, cy + 50); // point 1
       await this.delay(250);
-      await this.driver.drag(cx - 160, cy + 40, cx + 160, cy - 60);
+      await this.driver.moveTo(cx + 160, cy - 60); // rubber-band to point 2
+      await this.delay(150);
+      await this.driver.clickAt(cx + 160, cy - 60); // point 2
     }
-    await this.delay(300);
-    return { kind };
+    await this.delay(450);
+    const after = await this.readUndoLabel();
+    const placed = (kind === "horizontal" ? /horizontal line/i : /trend line/i).test(after);
+    return { kind, placed };
   }
 
   /** Capture a screenshot of the page (or a clip region). */
