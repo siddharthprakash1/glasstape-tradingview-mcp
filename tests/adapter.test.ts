@@ -24,6 +24,9 @@ class FakePageDriver implements PageDriver {
   async typeText(text: string): Promise<void> {
     this.calls.push({ method: "typeText", arg: text });
   }
+  async typeKeys(text: string): Promise<void> {
+    this.calls.push({ method: "typeKeys", arg: text });
+  }
   async pressKey(key: NamedKey): Promise<void> {
     this.calls.push({ method: "pressKey", arg: key });
   }
@@ -114,14 +117,15 @@ describe("TvAdapter.setTimeframe", () => {
 });
 
 describe("TvAdapter.addIndicator", () => {
-  it("opens the dialog, types the name, and confirms with Enter", async () => {
+  it("opens the dialog, types the name, clicks the result, and closes", async () => {
     const fake = new FakePageDriver();
     fake.onEvaluate = () => true;
     const adapter = new TvAdapter(fake, instant);
     const r = await adapter.addIndicator("RSI");
     expect(r.requested).toBe("RSI");
-    expect(fake.calls.find((c) => c.method === "typeText")?.arg).toBe("RSI");
-    expect(fake.calls.some((c) => c.method === "pressKey" && c.arg === "Enter")).toBe(true);
+    expect(r.added).toBe(true);
+    expect(fake.calls.some((c) => c.method === "evaluate" && String(c.arg).includes("RSI"))).toBe(true);
+    expect(fake.calls.some((c) => c.method === "pressKey" && c.arg === "Escape")).toBe(true);
   });
   it("rejects empty names", async () => {
     const adapter = new TvAdapter(new FakePageDriver(), instant);

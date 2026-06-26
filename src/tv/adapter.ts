@@ -99,18 +99,33 @@ export class TvAdapter {
     return this.driver.evaluate<LegendLine[]>(expr);
   }
 
-  /** Click the first matching element for a selector def, in-page. */
+  /**
+   * Click the first matching element. Many TradingView controls are React
+   * components that ignore a synthetic `el.click()` and only respond to real
+   * pointer events, so we resolve the element's center and dispatch an actual
+   * CDP mouse click there — falling back to in-page click for off-screen nodes.
+   */
   private async clickSelector(def: SelectorDef): Promise<boolean> {
-    const expr = `((sels) => {
+    const point = await this.driver.evaluate<{ x: number; y: number } | null>(`((sels) => {
       for (const s of sels) {
         try {
           const el = document.querySelector(s);
-          if (el) { if (el.scrollIntoView) el.scrollIntoView({ block: 'center' }); el.click(); return true; }
+          if (el) {
+            if (el.scrollIntoView) el.scrollIntoView({ block: 'center', inline: 'center' });
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+          }
         } catch (e) {}
       }
-      return false;
-    })(${JSON.stringify(def.strategies)})`;
-    return this.driver.evaluate<boolean>(expr);
+      return null;
+    })(${JSON.stringify(def.strategies)})`);
+    if (point && typeof point.x === "number") {
+      await this.driver.clickAt(Math.round(point.x), Math.round(point.y));
+      return true;
+    }
+    return this.driver.evaluate<boolean>(
+      `((sels) => { for (const s of sels) { try { const el = document.querySelector(s); if (el) { el.click(); return true; } } catch (e) {} } return false; })(${JSON.stringify(def.strategies)})`,
+    );
   }
 
   /** Focus the first matching element for a selector def, in-page. */
@@ -122,6 +137,43 @@ export class TvAdapter {
       return false;
     })(${JSON.stringify(def.strategies)})`;
     return this.driver.evaluate<boolean>(expr);
+  }
+
+  /**
+   * Set a (React-controlled) input's value so the framework's onChange actually
+   * fires. Setting `.value` or using insertText/keys does NOT trigger React's
+   * tracked setter, so search boxes never filter; this uses the native value
+   * setter + a bubbling `input` event, which is the reliable cross-React way.
+   */
+  private async setSearchValue(def: SelectorDef, value: string): Promise<boolean> {
+    return this.driver.evaluate<boolean>(`((sels, val) => {
+      for (const s of sels) {
+        try {
+          const el = document.querySelector(s);
+          if (el) {
+            const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+            el.focus();
+            setter.call(el, val);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+          }
+        } catch (e) {}
+      }
+      return false;
+    })(${JSON.stringify(def.strategies)}, ${JSON.stringify(value)})`);
+  }
+
+  /** Poll until any strategy for a selector resolves, up to timeoutMs. */
+  private async waitFor(def: SelectorDef, timeoutMs = 3500): Promise<boolean> {
+    const steps = Math.max(1, Math.ceil(timeoutMs / 300));
+    const expr = `((sels) => { for (const s of sels) { try { if (document.querySelector(s)) return true; } catch (e) {} } return false; })(${JSON.stringify(def.strategies)})`;
+    for (let i = 0; i < steps; i++) {
+      if (await this.driver.evaluate<boolean>(expr)) return true;
+      await this.delay(300);
+    }
+    return false;
   }
 
   /** Give keyboard focus to the chart surface. */
@@ -203,13 +255,19 @@ export class TvAdapter {
    */
   private async clickRowMatching(candidates: string[]): Promise<boolean> {
     return this.driver.evaluate<boolean>(`((cands) => {
-      const rows = Array.from(document.querySelectorAll('[role="option"],[role="menuitem"],[role="row"],[data-role="menuitem"],button,[class*="item"]'));
-      const norm = (s) => (s || '').toLowerCase();
-      for (const cand of cands) {
-        if (!cand) continue;
-        for (const row of rows) {
-          const hay = norm(row.textContent) + ' ' + norm(row.getAttribute && row.getAttribute('aria-label')) + ' ' + norm(row.getAttribute && row.getAttribute('title'));
-          if (hay.includes(cand)) { row.click(); return true; }
+      const norm = (s) => (s || '').toLowerCase().trim();
+      // Narrow (real menu items) first, broad (any button/item) last; exact match before substring.
+      const tiers = ['[role="option"],[role="menuitem"],[data-role="menuitem"],[role="row"]', '[class*="item"]', 'button'];
+      const hayOf = (el) => norm(el.textContent) + ' ' + norm(el.getAttribute && el.getAttribute('aria-label')) + ' ' + norm(el.getAttribute && el.getAttribute('title'));
+      for (const sel of tiers) {
+        const rows = Array.from(document.querySelectorAll(sel));
+        for (const cand of cands) {
+          if (!cand) continue;
+          for (const row of rows) { const h = norm(row.textContent); if (h === cand) { row.click(); return true; } }
+        }
+        for (const cand of cands) {
+          if (!cand) continue;
+          for (const row of rows) { if (hayOf(row).includes(cand)) { row.click(); return true; } }
         }
       }
       return false;
@@ -217,25 +275,28 @@ export class TvAdapter {
   }
 
   /** Add an indicator by name (e.g. "RSI", "MACD", "Bollinger Bands"). */
-  async addIndicator(name: string): Promise<{ requested: string }> {
+  async addIndicator(name: string): Promise<{ requested: string; added: boolean }> {
     const requested = name.trim();
     if (!requested) throw new GlasstapeError("INVALID_INPUT", "Indicator name must not be empty.");
+    await this.driver.pressKey("Escape"); // clear any stale dialog (re-clicking the button would just toggle it shut)
+    await this.delay(200);
     const opened = await this.clickSelector(SELECTORS.indicatorsButton);
     if (!opened) {
       throw new GlasstapeError("SELECTOR_NOT_FOUND", "Could not open the Indicators dialog.", {
         hint: "Run `glasstape doctor` and update indicatorsButton in src/tv/selectors.ts.",
       });
     }
-    await this.delay(450);
-    await this.focusSelector(SELECTORS.dialogSearchInput);
-    await this.delay(120);
-    await this.driver.typeText(requested);
-    await this.delay(550);
-    await this.driver.pressKey("Enter"); // add the top result
-    await this.delay(350);
+    await this.delay(700);
+    // Set the search value through React's native setter so the dialog actually filters.
+    await this.setSearchValue(SELECTORS.dialogSearchInput, requested);
+    // Poll for the results list instead of guessing a fixed delay.
+    const ready = await this.waitFor(SELECTORS.indicatorResult, 3500);
+    // The dialog adds a study when its top result row is clicked (Enter does NOT add).
+    const added = ready ? await this.clickSelector(SELECTORS.indicatorResult) : false;
+    await this.delay(400);
     await this.driver.pressKey("Escape"); // close the dialog
-    log.debug(`addIndicator(${requested})`);
-    return { requested };
+    log.debug(`addIndicator(${requested}) added=${added}`);
+    return { requested, added };
   }
 
   /** Change the chart type (candles, bars, line, area, "heikin ashi", …). */

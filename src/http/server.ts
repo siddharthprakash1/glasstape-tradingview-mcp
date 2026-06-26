@@ -106,12 +106,18 @@ async function handleApi(
       return sendJson(res, 200, await ctx.tv.createAlert());
     }
     if (method === "POST" && pathname === "/api/replay") {
-      const { action } = await parseJsonBody(req);
-      return sendJson(res, 200, await ctx.tv.replay(String(action ?? "start") as "start" | "step" | "play" | "stop"));
+      const a = String((await parseJsonBody(req)).action ?? "");
+      if (!["start", "step", "play", "stop"].includes(a)) {
+        return sendJson(res, 400, { ok: false, code: "INVALID_INPUT", error: "action must be start|step|play|stop" });
+      }
+      return sendJson(res, 200, await ctx.tv.replay(a as "start" | "step" | "play" | "stop"));
     }
     if (method === "POST" && pathname === "/api/drawing") {
-      const { kind } = await parseJsonBody(req);
-      return sendJson(res, 200, await ctx.tv.addDrawing(String(kind ?? "horizontal") as "horizontal" | "trend"));
+      const k = String((await parseJsonBody(req)).kind ?? "");
+      if (!["horizontal", "trend"].includes(k)) {
+        return sendJson(res, 400, { ok: false, code: "INVALID_INPUT", error: "kind must be horizontal|trend" });
+      }
+      return sendJson(res, 200, await ctx.tv.addDrawing(k as "horizontal" | "trend"));
     }
     return sendJson(res, 404, { ok: false, error: `Unknown endpoint: ${method} ${pathname}` });
   } catch (e) {
@@ -166,7 +172,9 @@ export function buildHttpServer(ctx: GlasstapeContext): Server {
 export function startHttpServer(ctx: GlasstapeContext, port = ctx.cfg.httpPort): Promise<Server> {
   const server = buildHttpServer(ctx);
   return new Promise((resolve) => {
-    server.listen(port, () => {
+    // Bind to loopback only — the API grants unauthenticated control of the
+    // logged-in TradingView session and must not be reachable from the LAN.
+    server.listen(port, "127.0.0.1", () => {
       const base = `http://localhost:${port}`;
       // Not MCP mode, so stdout is safe and useful here.
       process.stdout.write(`\nglasstape dashboard → ${base}/app/\nlanding page      → ${base}/\nAPI               → ${base}/api/health\n\n`);

@@ -47,6 +47,8 @@ export interface PageDriver {
   screenshot(opts?: ScreenshotOptions): Promise<string>;
   /** Insert literal text as if typed (used for symbol/Pine entry). */
   typeText(text: string): Promise<void>;
+  /** Type text via real per-character key events (triggers keydown-based search filters). */
+  typeKeys(text: string): Promise<void>;
   /** Press a single named key. */
   pressKey(key: NamedKey): Promise<void>;
   /** Click at viewport coordinates (CSS pixels). */

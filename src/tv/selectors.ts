@@ -118,9 +118,19 @@ export const SELECTORS = {
     description: "Search input inside an open dialog (indicators, etc.). Transient.",
     optional: true,
     strategies: [
-      'div[role="dialog"] input[type="text"]',
-      'input[data-role="search"]',
       'input[placeholder*="Search" i]',
+      'input[data-role="search"]',
+      'div[role="dialog"] input[type="text"]',
+    ],
+  },
+  indicatorResult: {
+    key: "indicatorResult",
+    description: "First result row in the open Indicators dialog (clicking it adds the study). Transient.",
+    optional: true,
+    strategies: [
+      '[data-name="indicators-dialog"] [data-role="list-item"]',
+      'div[role="dialog"] [data-role="list-item"]',
+      '[data-role="list-item"]',
     ],
   },
   chartTypeButton: {

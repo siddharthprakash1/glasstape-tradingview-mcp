@@ -99,6 +99,21 @@ describe("glasstape HTTP API", () => {
   it("404s an unknown API endpoint", async () => {
     expect((await fetch(`${base}/api/nope`)).status).toBe(404);
   });
+
+  it("does not serve files outside web/ via encoded traversal", async () => {
+    const res = await fetch(`${base}/%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd`);
+    expect(res.status).not.toBe(200);
+  });
+
+  it("rejects an invalid replay action with 400 INVALID_INPUT", async () => {
+    const res = await fetch(`${base}/api/replay`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "nonsense" }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("INVALID_INPUT");
+  });
 });
 
 describe("HTTP API error mapping", () => {

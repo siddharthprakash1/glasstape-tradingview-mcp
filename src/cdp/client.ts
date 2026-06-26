@@ -176,6 +176,17 @@ export class CdpClient implements PageDriver {
     await client.Input.insertText({ text });
   }
 
+  async typeKeys(text: string): Promise<void> {
+    await this.ensureConnected();
+    const client = this.requireClient();
+    for (const ch of text) {
+      // `text` on keyDown inserts the char AND fires keydown/input — needed for
+      // React search boxes that filter on keystrokes (e.g. the indicators dialog).
+      await client.Input.dispatchKeyEvent({ type: "keyDown", text: ch, unmodifiedText: ch, key: ch } as never);
+      await client.Input.dispatchKeyEvent({ type: "keyUp", key: ch } as never);
+    }
+  }
+
   async pressKey(key: NamedKey): Promise<void> {
     await this.ensureConnected();
     const client = this.requireClient();
@@ -193,6 +204,7 @@ export class CdpClient implements PageDriver {
     await client.Input.dispatchMouseEvent({ type: "mouseReleased", ...common } as never);
   }
 
+  /** Press a shortcut. NOTE: `key` is assumed to be a single A–Z letter (the VK code is derived from it). */
   async pressShortcut(key: string, modifiers: KeyModifiers = {}): Promise<void> {
     await this.ensureConnected();
     const client = this.requireClient();
@@ -215,10 +227,11 @@ export class CdpClient implements PageDriver {
   async drag(x1: number, y1: number, x2: number, y2: number): Promise<void> {
     await this.ensureConnected();
     const client = this.requireClient();
-    const left = { button: "left" as const, clickCount: 1 };
-    await client.Input.dispatchMouseEvent({ type: "mousePressed", x: x1, y: y1, ...left } as never);
-    await client.Input.dispatchMouseEvent({ type: "mouseMoved", x: (x1 + x2) / 2, y: (y1 + y2) / 2 } as never);
-    await client.Input.dispatchMouseEvent({ type: "mouseMoved", x: x2, y: y2 } as never);
-    await client.Input.dispatchMouseEvent({ type: "mouseReleased", x: x2, y: y2, ...left } as never);
+    // mouseMoved events must carry the held-button state (buttons:1) or the page
+    // sees a hover, not a drag — drawing tools need a real drag.
+    await client.Input.dispatchMouseEvent({ type: "mousePressed", x: x1, y: y1, button: "left", buttons: 1, clickCount: 1 } as never);
+    await client.Input.dispatchMouseEvent({ type: "mouseMoved", x: (x1 + x2) / 2, y: (y1 + y2) / 2, button: "left", buttons: 1 } as never);
+    await client.Input.dispatchMouseEvent({ type: "mouseMoved", x: x2, y: y2, button: "left", buttons: 1 } as never);
+    await client.Input.dispatchMouseEvent({ type: "mouseReleased", x: x2, y: y2, button: "left", buttons: 0, clickCount: 1 } as never);
   }
 }

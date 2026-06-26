@@ -84,10 +84,27 @@ node dist/cli/index.js http        # serves on http://localhost:8787
 open http://localhost:8787/app/
 ```
 
-The dashboard gives you a connection status light, symbol + timeframe controls,
-a live chart preview (auto-refreshing screenshot of your TradingView), a legend
-readout, and a Pine Script injector — every control wired to the same engine the
-MCP tools use. The landing page (`http://localhost:8787/`) links straight to it.
+The dashboard gives you a connection status light, a command bar, symbol +
+timeframe + indicator + chart-type + drawing + replay controls, a live chart
+preview (auto-refreshing screenshot of your TradingView), a legend readout, a
+screenshot gallery, and a Pine Script injector — every control wired to the same
+engine the MCP tools use. The landing page (`http://localhost:8787/`) links to it.
+
+> **Local & unauthenticated.** The server binds to `127.0.0.1` only and has no
+> auth — it grants full control of your logged-in TradingView session. Don't
+> port-forward it or run it on a shared/untrusted machine.
+
+### Control reliability (verified against a live TradingView session)
+
+These drive TradingView's real UI, so reliability varies by build. Current status:
+
+| Control | Status |
+|---|---|
+| symbol, timeframe, chart type, replay, screenshot, health | ✅ verified working |
+| alerts, layout, drawings | ⚠️ best-effort — the action fires but the result isn't always confirmable per build |
+| indicators (add by name) | ❌ opens the dialog, but auto-selecting a result is unreliable on current builds (the search box resists synthetic input); needs per-build tuning |
+
+When something misbehaves, run `glasstape doctor` — every fragile hook lives in `src/tv/selectors.ts`.
 
 The HTTP API (handy for your own scripts):
 
