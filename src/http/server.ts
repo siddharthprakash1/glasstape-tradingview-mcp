@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GlasstapeContext } from "../context.js";
+import { runBacktest, STRATEGIES } from "../backtest/index.js";
 import { runHealthCheck } from "../health/check.js";
 import { isGlasstapeError } from "../util/errors.js";
 import { log } from "../util/logger.js";
@@ -82,6 +83,30 @@ async function handleApi(
     }
     if (method === "POST" && pathname === "/api/drawings/clear") {
       return sendJson(res, 200, await ctx.tv.removeAllDrawings());
+    }
+    if (method === "GET" && pathname === "/api/strategies") {
+      return sendJson(res, 200, {
+        strategies: Object.values(STRATEGIES).map((s) => ({ name: s.name, description: s.description, defaults: s.defaults })),
+      });
+    }
+    if (method === "POST" && pathname === "/api/backtest") {
+      const body = await parseJsonBody(req);
+      const strategy = String(body.strategy ?? "");
+      if (!(strategy in STRATEGIES)) {
+        return sendJson(res, 400, { ok: false, code: "INVALID_INPUT", error: `strategy must be one of ${Object.keys(STRATEGIES).join(", ")}` });
+      }
+      const count = typeof body.count === "number" ? body.count : 300;
+      const data = await ctx.tv.getCandles(count);
+      if (!data.ok || !data.candles || data.candles.length < 30) {
+        return sendJson(res, 502, { ok: false, code: "TV_NOT_READY", error: "Could not read enough candles to backtest." });
+      }
+      const params = (body.params && typeof body.params === "object" ? body.params : {}) as Record<string, number>;
+      const config = {
+        feeBps: typeof body.feeBps === "number" ? body.feeBps : undefined,
+        slippageBps: typeof body.slippageBps === "number" ? body.slippageBps : undefined,
+      };
+      const result = runBacktest(data.candles, strategy, params, config);
+      return sendJson(res, 200, { ok: true, symbol: data.symbol, resolution: data.resolution, ...result });
     }
     if (method === "GET" && pathname === "/api/screenshot") {
       const b64 = await ctx.tv.screenshot({ format: "png" });

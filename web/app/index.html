@@ -144,6 +144,14 @@
   .gallery img{width:100%;height:50px;object-fit:cover;border-radius:7px;border:1px solid var(--line-soft);cursor:pointer;transition:.12s}
   .gallery img:hover{border-color:var(--accent);transform:scale(1.04)}
   .gallery .empty{grid-column:1/-1;color:var(--faint);font-family:var(--mono);font-size:12px}
+  select#btStrategy{flex:1;background:rgba(0,0,0,.32);border:1px solid var(--line);border-radius:11px;color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:9px 10px;min-width:0}
+  .btresult{font-family:var(--mono);font-size:12.5px;color:var(--dim);line-height:1.55}
+  .btresult .bt-row{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px dashed var(--line-soft)}
+  .btresult .bt-row:last-child{border-bottom:none}
+  .btresult .k{color:var(--faint)} .btresult .v{color:var(--ink);font-variant-numeric:tabular-nums}
+  .btresult .v.good{color:var(--good)} .btresult .v.bad{color:var(--bad)}
+  .btresult .bt-warn{margin-top:8px;padding:8px 10px;border-radius:9px;background:rgba(255,180,84,.12);border:1px solid rgba(255,180,84,.35);color:var(--amber);font-size:12px}
+  .btresult .bt-head{color:var(--faint);margin-bottom:6px}
 
   #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(16px);opacity:0;transition:.22s;
     font-family:var(--mono);font-size:13px;padding:11px 18px;border-radius:12px;pointer-events:none;z-index:60;max-width:90vw}
@@ -248,6 +256,15 @@
     <div class="card glass">
       <h3>Candles <span class="act" id="candlesBtn">read last 20</span></h3>
       <div class="legend" id="candlesBox">Real OHLCV from the chart series.</div>
+    </div>
+
+    <div class="card glass">
+      <h3>Backtest</h3>
+      <div class="row" style="margin-bottom:10px">
+        <select id="btStrategy"></select>
+        <button class="btn" id="btRun">Run</button>
+      </div>
+      <div id="btResult" class="btresult">Pick a strategy and Run — tests on this chart's candles (our own engine, fees + slippage, out-of-sample check).</div>
     </div>
 
     <div class="card glass">
@@ -434,6 +451,34 @@
     }catch(e){ toast(e.message,false); }
   }
 
+  // ---- backtest ----
+  async function loadStrategies(){
+    try{ const r=await api("/api/strategies"); const sel=$("btStrategy");
+      sel.innerHTML=(r.strategies||[]).map(s=>`<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join("");
+    }catch(e){}
+  }
+  function metric(k,v,cls){ return `<div class="bt-row"><span class="k">${k}</span><span class="v ${cls||''}">${v}</span></div>`; }
+  async function runBt(){
+    const strategy=$("btStrategy").value; if(!strategy) return;
+    $("btRun").disabled=true; $("btResult").textContent="Running…";
+    try{
+      const r=await api("/api/backtest",{method:"POST",headers:H,body:JSON.stringify({strategy,count:300})});
+      const m=r.metrics, beat=m.totalReturnPct>=m.buyHoldReturnPct;
+      let html=`<div class="bt-head">${escapeHtml(r.symbol||'')} · ${escapeHtml(r.resolution||'')} · ${r.bars} bars · ${escapeHtml(strategy)}</div>`;
+      html+=metric("Return", m.totalReturnPct+"%", m.totalReturnPct>=0?"good":"bad");
+      html+=metric("Buy &amp; hold", m.buyHoldReturnPct+"%", beat?"":"good");
+      html+=metric("Max drawdown", m.maxDrawdownPct+"%","bad");
+      html+=metric("Sharpe", m.sharpe, m.sharpe>=1?"good":"");
+      html+=metric("Trades · win", m.numTrades+" · "+m.winRatePct+"%");
+      html+=metric("In-sample", r.inSample.totalReturnPct+"%", r.inSample.totalReturnPct>=0?"good":"bad");
+      html+=metric("Out-of-sample", r.outOfSample.totalReturnPct+"%", r.outOfSample.totalReturnPct>=0?"good":"bad");
+      if(r.warning) html+=`<div class="bt-warn">⚠️ ${escapeHtml(r.warning)}</div>`;
+      $("btResult").innerHTML=html;
+      logAct("backtest "+strategy+" → "+m.totalReturnPct+"%");
+    }catch(e){ $("btResult").textContent="Error: "+e.message; toast(e.message,false); }
+    finally{ $("btRun").disabled=false; }
+  }
+
   // ---- command bar (e.g. "ethusd 4h rsi macd") ----
   const TF_CODES={"1m":"1","5m":"5","15m":"15","30m":"30","1h":"60","60":"60","4h":"240","240":"240","1d":"D","d":"D","1w":"W","w":"W","1mo":"1mo","m":"1"};
   const KNOWN_IND=["rsi","macd","ema","sma","wma","vwap","bb","bollinger","stochastic","stoch","atr","adx","obv","ichimoku","supertrend","volume","mfi","cci"];
@@ -479,6 +524,8 @@
   $("alertBtn").onclick=doAlert;
   $("clearDrawings").onclick=clearDrawings;
   $("candlesBtn").onclick=readCandles;
+  $("btRun").onclick=runBt;
+  loadStrategies();
   $("capBtn").onclick=capture;
   $("legendBtn").onclick=readLegend; $("pineBtn").onclick=injectPine;
   $("refreshBtn").onclick=refreshShot; $("dlBtn").onclick=download; $("autoChk").onchange=autoLoop;

@@ -131,6 +131,8 @@ The HTTP API (handy for your own scripts):
 | `POST /api/drawing` `{kind,price?}` | add a horizontal/trend line (price pins a level) |
 | `GET /api/drawings` | list drawings on the chart |
 | `POST /api/drawings/clear` | remove all drawings |
+| `GET /api/strategies` | list built-in backtest strategies |
+| `POST /api/backtest` `{strategy,params?,count?}` | backtest a strategy on the chart's candles |
 | `POST /api/pine` `{source}` | inject Pine source |
 
 ## CLI
@@ -164,6 +166,8 @@ glasstape tools                 List the MCP tools
 | `get_candles` | Real OHLCV candle data from the chart series |
 | `add_drawing` | Add a horizontal (price-pinned) or trend line via the internal API |
 | `remove_all_drawings` / `list_drawings` | Manage chart drawings |
+| `backtest` | Backtest a strategy on the chart's candles (our engine; IS/OOS + overfit check) |
+| `list_strategies` | List built-in strategies + default params |
 | `focus_chart` | Give keyboard focus to the chart |
 | `screenshot` | Capture the window (optionally clipped) |
 | `pine_set_source` | Write Pine source into the open Pine Editor |
@@ -171,6 +175,30 @@ glasstape tools                 List the MCP tools
 | `pine_get_errors` | Read Pine compile error markers |
 | `list_targets` | List CDP targets (diagnostics) |
 | `tv_evaluate` | Advanced escape hatch: run JS in the page |
+
+## Backtesting (our own engine)
+
+Everything else in glasstape is a bridge to TradingView. The backtester is the
+part that's **genuinely ours**: `src/backtest/` is pure, dependency-free TS that
+takes TradingView's candle data (`get_candles`) and runs a real simulation.
+
+- **Vectorized, long-only engine** with fees + slippage and **no look-ahead**
+  (a position decided at bar *i*'s close only affects bar *i+1*).
+- **Metrics:** total return vs buy-and-hold, CAGR, max drawdown, annualised
+  Sharpe, win rate, profit factor, exposure, per-trade stats.
+- **Overfitting guardrail:** every run reports **in-sample vs out-of-sample**
+  metrics and a plain-English warning when the edge doesn't generalise — the
+  thing in-chart backtesting won't tell you.
+- **Built-in strategies:** `sma_crossover`, `rsi_reversion`, `breakout`
+  (parameterizable). The engine takes any 0/1 position series, so new strategies
+  are trivial to add.
+- Fully unit-tested (indicators, engine, strategies, splits) — no browser needed.
+
+```bash
+curl -s -XPOST localhost:8787/api/backtest \
+  -H 'content-type: application/json' \
+  -d '{"strategy":"sma_crossover","params":{"fast":10,"slow":30},"count":300}'
+```
 
 ## Configuration
 
