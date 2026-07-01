@@ -59,9 +59,10 @@ async function handleApi(
   ctx: GlasstapeContext,
   req: IncomingMessage,
   res: ServerResponse,
-  pathname: string,
+  url: URL,
 ): Promise<void> {
   const method = req.method ?? "GET";
+  const pathname = url.pathname;
   try {
     if (method === "GET" && pathname === "/api/health") {
       return sendJson(res, 200, await runHealthCheck(ctx));
@@ -71,6 +72,16 @@ async function handleApi(
     }
     if (method === "GET" && pathname === "/api/legend") {
       return sendJson(res, 200, { lines: await ctx.tv.getLegend() });
+    }
+    if (method === "GET" && pathname === "/api/candles") {
+      const count = Number.parseInt(url.searchParams.get("count") ?? "50", 10);
+      return sendJson(res, 200, await ctx.tv.getCandles(Number.isFinite(count) ? count : 50));
+    }
+    if (method === "GET" && pathname === "/api/drawings") {
+      return sendJson(res, 200, await ctx.tv.listDrawings());
+    }
+    if (method === "POST" && pathname === "/api/drawings/clear") {
+      return sendJson(res, 200, await ctx.tv.removeAllDrawings());
     }
     if (method === "GET" && pathname === "/api/screenshot") {
       const b64 = await ctx.tv.screenshot({ format: "png" });
@@ -113,11 +124,13 @@ async function handleApi(
       return sendJson(res, 200, await ctx.tv.replay(a as "start" | "step" | "play" | "stop"));
     }
     if (method === "POST" && pathname === "/api/drawing") {
-      const k = String((await parseJsonBody(req)).kind ?? "");
+      const body = await parseJsonBody(req);
+      const k = String(body.kind ?? "");
       if (!["horizontal", "trend"].includes(k)) {
         return sendJson(res, 400, { ok: false, code: "INVALID_INPUT", error: "kind must be horizontal|trend" });
       }
-      return sendJson(res, 200, await ctx.tv.addDrawing(k as "horizontal" | "trend"));
+      const price = typeof body.price === "number" ? body.price : undefined;
+      return sendJson(res, 200, await ctx.tv.addDrawing(k as "horizontal" | "trend", { price }));
     }
     return sendJson(res, 404, { ok: false, error: `Unknown endpoint: ${method} ${pathname}` });
   } catch (e) {
@@ -161,7 +174,7 @@ export function buildHttpServer(ctx: GlasstapeContext): Server {
   return createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname.startsWith("/api/")) {
-      void handleApi(ctx, req, res, url.pathname);
+      void handleApi(ctx, req, res, url);
     } else {
       void handleStatic(req, res, url.pathname);
     }

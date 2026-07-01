@@ -167,6 +167,50 @@ describe("TvAdapter.addDrawing", () => {
   });
 });
 
+describe("TvAdapter drawings via internal shape API", () => {
+  it("uses the shape API when available (no keyboard/mouse fallback)", async () => {
+    const fake = new FakePageDriver();
+    fake.onEvaluate = (expr) =>
+      /createMultipointShape|createShape/.test(expr) ? { ok: true, id: "abc" } : true;
+    const adapter = new TvAdapter(fake, instant);
+    const r = await adapter.addDrawing("trend");
+    expect(r).toMatchObject({ placed: true, method: "api", id: "abc" });
+    expect(fake.calls.some((c) => c.method === "pressShortcut")).toBe(false);
+  });
+
+  it("falls back to keyboard/mouse when the API is unavailable", async () => {
+    const fake = new FakePageDriver();
+    fake.onEvaluate = (expr) => (/createShape/.test(expr) ? { ok: false, reason: "no-api" } : true);
+    const adapter = new TvAdapter(fake, instant);
+    const r = await adapter.addDrawing("horizontal");
+    expect(r.method).toBe("ui");
+    expect(fake.calls.some((c) => c.method === "pressShortcut")).toBe(true);
+  });
+
+  it("removeAllDrawings returns the removed count", async () => {
+    const fake = new FakePageDriver();
+    fake.onEvaluate = () => ({ ok: true, removed: 4 });
+    const adapter = new TvAdapter(fake, instant);
+    expect(await adapter.removeAllDrawings()).toMatchObject({ ok: true, removed: 4 });
+  });
+});
+
+describe("TvAdapter.getCandles", () => {
+  it("returns structured OHLCV from the series", async () => {
+    const fake = new FakePageDriver();
+    fake.onEvaluate = () => ({
+      ok: true,
+      symbol: "BTCUSD",
+      resolution: "240",
+      candles: [{ time: 1, open: 1, high: 2, low: 0, close: 1.5, volume: 10 }],
+    });
+    const adapter = new TvAdapter(fake, instant);
+    const r = await adapter.getCandles(1);
+    expect(r.ok).toBe(true);
+    expect(r.candles?.[0]?.close).toBe(1.5);
+  });
+});
+
 describe("TvAdapter.ping / isTradingView", () => {
   it("ping returns true when the page returns 4", async () => {
     const fake = new FakePageDriver();

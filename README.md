@@ -100,9 +100,15 @@ These drive TradingView's real UI, so reliability varies by build. Current statu
 
 | Control | Status |
 |---|---|
-| symbol, timeframe, chart type, indicators, replay, alerts, screenshot, health, **horizontal-line drawing** | ✅ verified working |
-| trend-line drawing | TradingView platform limit — its two-point canvas drawing doesn't complete from synthetic input (single-point drawings like horizontal lines do). `add_drawing` returns `placed:false` honestly rather than pretending. |
+| symbol, timeframe, chart type, indicators, replay, alerts, screenshot, health | ✅ verified working |
+| **drawings (horizontal + trend), remove/list drawings** | ✅ verified working — created through TradingView's internal charting API (`createShape` / `createMultipointShape`), so both line types place reliably with exact coordinates (a horizontal line can be pinned to an exact price) |
+| **candles (real OHLCV)** | ✅ verified working — `get_candles` reads the chart's actual series data (time/open/high/low/close/volume), not scraped from the legend |
 | multi-chart layout | TradingView plan limit — multi-chart grids require a paid plan. On single-chart plans `set_layout` returns `applied:false` with a clear note (it drives the internal layout API, which the plan no-ops). |
+
+Drawings and candle reads go through TradingView's internal charting API
+(`window.TradingViewApi.activeChart()`) — discovered and quarantined in
+`src/tv/adapter.ts`. It's more powerful and reliable than DOM/mouse simulation,
+at the cost of being an undocumented interface (the usual glasstape tradeoff).
 
 The bridge enables **CDP focus emulation** on connect (`Emulation.setFocusEmulationEnabled`)
 so the page always reports `document.hasFocus() === true`. TradingView gates dialog
@@ -121,6 +127,10 @@ The HTTP API (handy for your own scripts):
 | `POST /api/timeframe` `{timeframe}` | switch interval |
 | `GET /api/screenshot` | PNG of the chart |
 | `GET /api/legend` | OHLC/indicator values |
+| `GET /api/candles` `?count=N` | real OHLCV candle data from the series |
+| `POST /api/drawing` `{kind,price?}` | add a horizontal/trend line (price pins a level) |
+| `GET /api/drawings` | list drawings on the chart |
+| `POST /api/drawings/clear` | remove all drawings |
 | `POST /api/pine` `{source}` | inject Pine source |
 
 ## CLI
@@ -151,6 +161,9 @@ glasstape tools                 List the MCP tools
 | `set_symbol` | Switch symbol via the search dialog |
 | `set_timeframe` | Switch interval via the interval menu |
 | `get_legend` | OHLC + indicator values from the legend |
+| `get_candles` | Real OHLCV candle data from the chart series |
+| `add_drawing` | Add a horizontal (price-pinned) or trend line via the internal API |
+| `remove_all_drawings` / `list_drawings` | Manage chart drawings |
 | `focus_chart` | Give keyboard focus to the chart |
 | `screenshot` | Capture the window (optionally clipped) |
 | `pine_set_source` | Write Pine source into the open Pine Editor |

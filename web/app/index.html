@@ -189,6 +189,7 @@
       <div class="tgrid">
         <button class="btn sm" data-draw="horizontal">+ H-line</button>
         <button class="btn sm" data-draw="trend">+ Trend</button>
+        <button class="btn sm" id="clearDrawings">Clear</button>
       </div>
 
       <label class="tlabel">Replay</label>
@@ -242,6 +243,11 @@
     <div class="card glass">
       <h3>Legend <span class="act" id="legendBtn">read OHLC</span></h3>
       <div class="legend" id="legendBox">Click “read OHLC”.</div>
+    </div>
+
+    <div class="card glass">
+      <h3>Candles <span class="act" id="candlesBtn">read last 20</span></h3>
+      <div class="legend" id="candlesBox">Real OHLCV from the chart series.</div>
     </div>
 
     <div class="card glass">
@@ -413,6 +419,21 @@
     }catch(e){ toast(e.message,false); }
   }
 
+  async function clearDrawings(){
+    try{ const r=await api("/api/drawings/clear",{method:"POST",headers:H});
+      toast("Cleared "+(r.removed||0)+" drawing(s)"); logAct("cleared "+(r.removed||0)+" drawings"); scheduleShot(600);
+    }catch(e){ toast(e.message,false); }
+  }
+  async function readCandles(){
+    try{ const r=await api("/api/candles?count=20"); const box=$("candlesBox");
+      if(!r.ok||!r.candles||!r.candles.length){ box.textContent="(no candle data)"; return; }
+      const fmt=(n)=>Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
+      const rows=r.candles.slice(-12).reverse().map(c=>{ const t=new Date(c.time*1000).toISOString().slice(5,16).replace("T"," "); const up=c.close>=c.open; return `<span style="color:${up?'var(--good)':'var(--bad)'}">${t}&nbsp;&nbsp;C ${fmt(c.close)}</span>`; }).join("<br>");
+      box.innerHTML=`<span style="color:var(--faint)">${escapeHtml(r.symbol||'')} · ${escapeHtml(r.resolution||'')} · ${r.candles.length} bars</span><br>`+rows;
+      logAct("read "+r.candles.length+" candles");
+    }catch(e){ toast(e.message,false); }
+  }
+
   // ---- command bar (e.g. "ethusd 4h rsi macd") ----
   const TF_CODES={"1m":"1","5m":"5","15m":"15","30m":"30","1h":"60","60":"60","4h":"240","240":"240","1d":"D","d":"D","1w":"W","w":"W","1mo":"1mo","m":"1"};
   const KNOWN_IND=["rsi","macd","ema","sma","wma","vwap","bb","bollinger","stochastic","stoch","atr","adx","obv","ichimoku","supertrend","volume","mfi","cci"];
@@ -456,6 +477,8 @@
   document.querySelectorAll("[data-replay]").forEach(b=>b.onclick=()=>doReplay(b.dataset.replay));
   document.querySelectorAll("[data-layout]").forEach(b=>b.onclick=()=>setLayout(b.dataset.layout));
   $("alertBtn").onclick=doAlert;
+  $("clearDrawings").onclick=clearDrawings;
+  $("candlesBtn").onclick=readCandles;
   $("capBtn").onclick=capture;
   $("legendBtn").onclick=readLegend; $("pineBtn").onclick=injectPine;
   $("refreshBtn").onclick=refreshShot; $("dlBtn").onclick=download; $("autoChk").onchange=autoLoop;

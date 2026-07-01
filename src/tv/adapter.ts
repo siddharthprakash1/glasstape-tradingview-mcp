@@ -24,6 +24,15 @@ export interface LegendLine {
   text: string;
 }
 
+export interface Candle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 /**
  * High-level TradingView operations expressed over a {@link PageDriver}.
  *
@@ -358,34 +367,108 @@ export class TvAdapter {
     );
   }
 
+  /** Create a drawing through TradingView's internal charting API (reliable, exact coords). */
+  private async drawViaApi(
+    kind: "horizontal" | "trend",
+    price?: number,
+  ): Promise<{ ok: boolean; id?: string; reason?: string }> {
+    const priceLit = price === undefined ? "null" : String(price);
+    const expr = `(async () => {
+      try {
+        const api = window.TradingViewApi;
+        if (!api || typeof api.activeChart !== 'function') return { ok:false, reason:'no-api' };
+        const ch = api.activeChart();
+        const s = ch.getSeries(); const d = s.data(); const bars = d && d.bars ? d.bars() : d;
+        const arr = (bars && bars._items) ? bars._items : [];
+        const lastClose = arr.length ? arr[arr.length-1].value[4] : 0;
+        const vr = ch.getVisibleRange();
+        if (${JSON.stringify(kind)} === 'horizontal') {
+          const p = (${priceLit} != null) ? ${priceLit} : lastClose;
+          const id = await ch.createShape({ time: Math.round((vr.from + vr.to)/2), price: p }, { shape: 'horizontal_line' });
+          return { ok:true, id: String(id) };
+        }
+        const t1 = Math.round(vr.from + (vr.to - vr.from)*0.3), t2 = Math.round(vr.from + (vr.to - vr.from)*0.7);
+        const id = await ch.createMultipointShape([{ time:t1, price: lastClose*0.99 }, { time:t2, price: lastClose*1.01 }], { shape: 'trend_line' });
+        return { ok:true, id: String(id) };
+      } catch (e) { return { ok:false, reason: String(e).slice(0,140) }; }
+    })()`;
+    return this.driver.evaluate<{ ok: boolean; id?: string; reason?: string }>(expr);
+  }
+
   /**
-   * Add a drawing. Horizontal lines (single click) place reliably; trend lines
-   * need a two-point canvas interaction that synthetic events don't always
-   * complete, so `placed` is verified against the undo label per kind.
+   * Add a drawing. Uses TradingView's internal shape API (reliable for both
+   * horizontal and trend lines); falls back to keyboard/mouse if the API is
+   * unavailable. `price` optionally pins a horizontal line to an exact value.
    */
-  async addDrawing(kind: "horizontal" | "trend"): Promise<{ kind: string; placed: boolean }> {
+  async addDrawing(
+    kind: "horizontal" | "trend",
+    opts: { price?: number } = {},
+  ): Promise<{ kind: string; placed: boolean; method: "api" | "ui"; id?: string }> {
+    const api = await this.drawViaApi(kind, opts.price);
+    if (api && api.ok) return { kind, placed: true, method: "api", id: api.id };
+
+    // Fallback: keyboard/mouse (horizontal reliable; trend best-effort).
     const vp = await this.driver.viewport();
     const cx = Math.round(vp.width / 2);
     const cy = Math.round(vp.height / 2);
     await this.focusChart();
     await this.delay(150);
     if (kind === "horizontal") {
-      await this.driver.pressShortcut("h", { alt: true }); // Alt+H: horizontal line tool
+      await this.driver.pressShortcut("h", { alt: true });
       await this.delay(300);
       await this.driver.clickAt(cx, cy);
     } else {
-      await this.driver.pressShortcut("t", { alt: true }); // trend line tool
+      await this.driver.pressShortcut("t", { alt: true });
       await this.delay(300);
-      await this.driver.clickAt(cx - 160, cy + 50); // point 1
+      await this.driver.clickAt(cx - 160, cy + 50);
       await this.delay(250);
-      await this.driver.moveTo(cx + 160, cy - 60); // rubber-band to point 2
+      await this.driver.moveTo(cx + 160, cy - 60);
       await this.delay(150);
-      await this.driver.clickAt(cx + 160, cy - 60); // point 2
+      await this.driver.clickAt(cx + 160, cy - 60);
     }
     await this.delay(450);
     const after = await this.readUndoLabel();
     const placed = (kind === "horizontal" ? /horizontal line/i : /trend line/i).test(after);
-    return { kind, placed };
+    return { kind, placed, method: "ui" };
+  }
+
+  /** Remove every drawing on the active chart. */
+  async removeAllDrawings(): Promise<{ ok: boolean; removed: number; reason?: string }> {
+    return this.driver.evaluate<{ ok: boolean; removed: number; reason?: string }>(`(() => {
+      try {
+        const api = window.TradingViewApi;
+        if (!api || typeof api.activeChart !== 'function') return { ok:false, removed:0, reason:'no-api' };
+        const ch = api.activeChart(); const before = ch.getAllShapes().length; ch.removeAllShapes();
+        return { ok:true, removed: before };
+      } catch (e) { return { ok:false, removed:0, reason: String(e).slice(0,120) }; }
+    })()`);
+  }
+
+  /** List the drawings currently on the active chart. */
+  async listDrawings(): Promise<{ ok: boolean; shapes: Array<{ id: string; name: string }>; reason?: string }> {
+    return this.driver.evaluate<{ ok: boolean; shapes: Array<{ id: string; name: string }>; reason?: string }>(`(() => {
+      try {
+        const api = window.TradingViewApi;
+        if (!api || typeof api.activeChart !== 'function') return { ok:false, shapes:[], reason:'no-api' };
+        const ch = api.activeChart();
+        return { ok:true, shapes: ch.getAllShapes().map(x => ({ id: String(x.id), name: x.name })) };
+      } catch (e) { return { ok:false, shapes:[], reason: String(e).slice(0,120) }; }
+    })()`);
+  }
+
+  /** Read recent OHLCV candles from the chart's series (real data, not legend scraping). */
+  async getCandles(count = 50): Promise<{ ok: boolean; symbol?: string; resolution?: string; candles?: Candle[]; reason?: string }> {
+    const n = Math.max(1, Math.min(500, Math.floor(count)));
+    return this.driver.evaluate<{ ok: boolean; symbol?: string; resolution?: string; candles?: Candle[]; reason?: string }>(`(() => {
+      try {
+        const api = window.TradingViewApi;
+        if (!api || typeof api.activeChart !== 'function') return { ok:false, reason:'no-api' };
+        const ch = api.activeChart(); const s = ch.getSeries(); const d = s.data(); const bars = d && d.bars ? d.bars() : d;
+        const arr = (bars && bars._items) ? bars._items : [];
+        const candles = arr.slice(-${n}).map(b => ({ time: b.value[0], open: b.value[1], high: b.value[2], low: b.value[3], close: b.value[4], volume: b.value[5] }));
+        return { ok:true, symbol: ch.symbol && ch.symbol(), resolution: ch.resolution && ch.resolution(), count: candles.length, candles };
+      } catch (e) { return { ok:false, reason: String(e).slice(0,140) }; }
+    })()`);
   }
 
   /** Capture a screenshot of the page (or a clip region). */

@@ -75,4 +75,22 @@ export const focusChart = defineTool({
   },
 });
 
-export const chartTools = [getChartState, setSymbol, setTimeframe, getLegend, focusChart];
+export const getCandles = defineTool({
+  name: "get_candles",
+  description:
+    "Read recent OHLCV candles from the chart as real structured data (time, open, high, low, close, volume) — not scraped from the legend. Use for analysis, backtesting inputs, or summaries.",
+  input: {
+    count: z.number().int().min(1).max(500).default(50).describe("How many most-recent candles to return."),
+  },
+  handler: async (ctx, args) => {
+    const r = await ctx.tv.getCandles(args.count);
+    if (!r.ok) return { text: `Could not read candles${r.reason ? ` (${r.reason})` : ""}.`, data: r };
+    const last = r.candles && r.candles.length ? r.candles[r.candles.length - 1] : undefined;
+    return {
+      text: `${r.candles?.length ?? 0} candles for ${r.symbol ?? "?"} @ ${r.resolution ?? "?"}${last ? ` · last close ${last.close}` : ""}.`,
+      data: r,
+    };
+  },
+});
+
+export const chartTools = [getChartState, setSymbol, setTimeframe, getLegend, getCandles, focusChart];

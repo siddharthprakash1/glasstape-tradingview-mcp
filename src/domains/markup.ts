@@ -55,17 +55,38 @@ export const replay = defineTool({
 
 export const addDrawing = defineTool({
   name: "add_drawing",
-  description: "Add a drawing: a horizontal line at center (reliable), or a trend line (two-point, best-effort). Returns whether placement was confirmed.",
-  input: { kind: z.enum(["horizontal", "trend"]).describe("Drawing kind.") },
+  description: "Add a drawing via TradingView's internal shape API (reliable): a horizontal line (optionally pinned to an exact price) or a trend line.",
+  input: {
+    kind: z.enum(["horizontal", "trend"]).describe("Drawing kind."),
+    price: z.number().optional().describe("For a horizontal line: pin it to this exact price (defaults to last close)."),
+  },
   handler: async (ctx, args) => {
-    const r = await ctx.tv.addDrawing(args.kind);
+    const r = await ctx.tv.addDrawing(args.kind, { price: args.price });
     return {
-      text: r.placed
-        ? `Placed ${r.kind} drawing.`
-        : `Attempted ${r.kind} drawing — placement not confirmed (TradingView canvas drawings can need manual completion).`,
+      text: r.placed ? `Placed ${r.kind} drawing (via ${r.method}).` : `Could not place ${r.kind} drawing.`,
       data: r,
     };
   },
 });
 
-export const markupTools = [addIndicator, setChartType, setLayout, createAlert, replay, addDrawing];
+export const removeAllDrawings = defineTool({
+  name: "remove_all_drawings",
+  description: "Remove every drawing (lines, shapes) from the active chart.",
+  input: {},
+  handler: async (ctx) => {
+    const r = await ctx.tv.removeAllDrawings();
+    return { text: r.ok ? `Removed ${r.removed} drawing(s).` : `Could not remove drawings${r.reason ? ` (${r.reason})` : ""}.`, data: r };
+  },
+});
+
+export const listDrawings = defineTool({
+  name: "list_drawings",
+  description: "List the drawings currently on the active chart (id + type).",
+  input: {},
+  handler: async (ctx) => {
+    const r = await ctx.tv.listDrawings();
+    return { text: r.ok ? `${r.shapes.length} drawing(s).` : "Could not list drawings.", data: r };
+  },
+});
+
+export const markupTools = [addIndicator, setChartType, setLayout, createAlert, replay, addDrawing, removeAllDrawings, listDrawings];
