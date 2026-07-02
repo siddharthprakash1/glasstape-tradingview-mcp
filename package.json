@@ -4,6 +4,15 @@
   "description": "Typed, self-healing MCP bridge between Claude and TradingView Desktop over the Chrome DevTools Protocol.",
   "type": "module",
   "license": "MIT",
+  "author": "Siddharth Prakash <iamsid0011@gmail.com> (https://siddharthprakash.vercel.app/)",
+  "homepage": "https://github.com/siddharthprakash1/glasstape-tradingview-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/siddharthprakash1/glasstape-tradingview-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/siddharthprakash1/glasstape-tradingview-mcp/issues"
+  },
   "engines": {
     "node": ">=18"
   },
@@ -33,6 +42,7 @@
     "cdp",
     "pine-script",
     "trading",
+    "backtesting",
     "model-context-protocol"
   ],
   "dependencies": {
