@@ -259,11 +259,12 @@
     </div>
 
     <div class="card glass">
-      <h3>Backtest</h3>
+      <h3>Backtest <span class="act" id="btCompare">compare all</span></h3>
       <div class="row" style="margin-bottom:10px">
         <select id="btStrategy"></select>
         <button class="btn" id="btRun">Run</button>
       </div>
+      <canvas id="btCurve" height="70" style="display:none;width:100%;height:70px;margin-bottom:10px;border:1px solid var(--line-soft);border-radius:8px;background:rgba(0,0,0,.25)"></canvas>
       <div id="btResult" class="btresult">Pick a strategy and Run — tests on this chart's candles (our own engine, fees + slippage, out-of-sample check).</div>
     </div>
 
@@ -458,6 +459,22 @@
     }catch(e){}
   }
   function metric(k,v,cls){ return `<div class="bt-row"><span class="k">${k}</span><span class="v ${cls||''}">${v}</span></div>`; }
+  function drawCurve(curve){
+    const cv=$("btCurve"); if(!curve||curve.length<2){ cv.style.display="none"; return; }
+    cv.style.display="block"; const dpr=Math.min(window.devicePixelRatio||1,2);
+    const w=cv.clientWidth, h=cv.clientHeight; cv.width=w*dpr; cv.height=h*dpr;
+    const x=cv.getContext("2d"); x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,w,h);
+    let lo=Math.min(...curve), hi=Math.max(...curve); if(hi===lo){hi=lo+1;}
+    const pad=6, X=(i)=>pad+i/(curve.length-1)*(w-2*pad), Y=(v)=>h-pad-(v-lo)/(hi-lo)*(h-2*pad);
+    const up=curve[curve.length-1]>=curve[0], col=up?"#5fe6c2":"#ff7a7a";
+    // baseline (initial equity)
+    const base=curve[0]; x.strokeStyle="rgba(255,255,255,.12)"; x.setLineDash([3,3]); x.beginPath(); x.moveTo(pad,Y(base)); x.lineTo(w-pad,Y(base)); x.stroke(); x.setLineDash([]);
+    // area + line
+    x.beginPath(); x.moveTo(X(0),Y(curve[0])); for(let i=1;i<curve.length;i++) x.lineTo(X(i),Y(curve[i]));
+    x.lineTo(X(curve.length-1),h-pad); x.lineTo(X(0),h-pad); x.closePath();
+    const g=x.createLinearGradient(0,0,0,h); g.addColorStop(0,col+"44"); g.addColorStop(1,col+"00"); x.fillStyle=g; x.fill();
+    x.beginPath(); x.moveTo(X(0),Y(curve[0])); for(let i=1;i<curve.length;i++) x.lineTo(X(i),Y(curve[i])); x.strokeStyle=col; x.lineWidth=1.5; x.stroke();
+  }
   async function runBt(){
     const strategy=$("btStrategy").value; if(!strategy) return;
     $("btRun").disabled=true; $("btResult").textContent="Running…";
@@ -474,9 +491,25 @@
       html+=metric("Out-of-sample", r.outOfSample.totalReturnPct+"%", r.outOfSample.totalReturnPct>=0?"good":"bad");
       if(r.warning) html+=`<div class="bt-warn">⚠️ ${escapeHtml(r.warning)}</div>`;
       $("btResult").innerHTML=html;
+      drawCurve(r.equityCurve);
       logAct("backtest "+strategy+" → "+m.totalReturnPct+"%");
     }catch(e){ $("btResult").textContent="Error: "+e.message; toast(e.message,false); }
     finally{ $("btRun").disabled=false; }
+  }
+  async function compareAll(){
+    const strategies=[...$("btStrategy").options].map(o=>o.value); if(!strategies.length) return;
+    $("btCompare").textContent="running…"; $("btCurve").style.display="none"; $("btResult").textContent="Comparing "+strategies.length+" strategies…";
+    const rows=[];
+    for(const s of strategies){
+      try{ const r=await api("/api/backtest",{method:"POST",headers:H,body:JSON.stringify({strategy:s,count:300})});
+        rows.push({s, ret:r.metrics.totalReturnPct, sharpe:r.metrics.sharpe, oos:r.outOfSample.totalReturnPct}); }
+      catch(e){ rows.push({s, ret:NaN, sharpe:NaN, oos:NaN}); }
+    }
+    rows.sort((a,b)=>((isNaN(b.sharpe)?-1e9:b.sharpe)-(isNaN(a.sharpe)?-1e9:a.sharpe)));
+    const cell=(v,suffix)=>isNaN(v)?"—":(v+suffix);
+    let html=`<div class="bt-head">ranked by Sharpe · return · out-of-sample</div>`;
+    html+=rows.map(r=>`<div class="bt-row"><span class="k">${escapeHtml(r.s)}</span><span class="v">${isNaN(r.sharpe)?"—":r.sharpe} · <span class="${r.ret>=0?'':'bad'}" style="color:${r.ret>=0?'var(--good)':'var(--bad)'}">${cell(r.ret,"%")}</span> · <span style="color:${r.oos>=0?'var(--good)':'var(--bad)'}">${cell(r.oos,"%")}</span></span></div>`).join("");
+    $("btResult").innerHTML=html; $("btCompare").textContent="compare all"; logAct("compared "+rows.length+" strategies");
   }
 
   // ---- command bar (e.g. "ethusd 4h rsi macd") ----
@@ -525,6 +558,7 @@
   $("clearDrawings").onclick=clearDrawings;
   $("candlesBtn").onclick=readCandles;
   $("btRun").onclick=runBt;
+  $("btCompare").onclick=compareAll;
   loadStrategies();
   $("capBtn").onclick=capture;
   $("legendBtn").onclick=readLegend; $("pineBtn").onclick=injectPine;
