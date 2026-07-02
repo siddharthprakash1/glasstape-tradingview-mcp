@@ -1,14 +1,21 @@
 # glasstape
 
-**A typed, self-healing MCP bridge between Claude and TradingView Desktop.**
+**A typed, self-healing MCP bridge between Claude and TradingView Desktop — plus a standalone backtesting engine.**
 
-glasstape lets Claude (or any [Model Context Protocol](https://modelcontextprotocol.io) client) read your charts, switch symbols and timeframes, write Pine Script, take screenshots, and run a real connection health-check — by talking to your **locally running TradingView Desktop** over the Chrome DevTools Protocol (CDP).
-
-It is a ground-up TypeScript reimagining of the community `tradingview-mcp` idea, built to fix the two things that make those bridges painful: **they break silently on TradingView updates, and they're untyped and hard to extend.**
+glasstape lets Claude (or any [Model Context Protocol](https://modelcontextprotocol.io) client) read your charts, switch symbols and timeframes, add indicators, draw on the chart, write Pine Script, and read real OHLCV — by driving your **locally running TradingView Desktop** over the Chrome DevTools Protocol. It also ships a **web dashboard**, a **CLI**, and a **backtesting engine that runs on its own market data** (no TradingView required).
 
 ```
-Claude ─▶ MCP (stdio) ─▶ typed tools ─▶ TV adapter ─▶ CDP ─▶ TradingView Desktop (:9222)
+Claude / dashboard ─▶ MCP + HTTP ─▶ typed tools ─▶ TV adapter ─▶ CDP ─▶ TradingView Desktop (:9222)
+                                          └▶ backtest engine ◀─ Binance OHLCV (standalone)
 ```
+
+![Dashboard](docs/images/dashboard.png)
+
+> **How it was built:** driving TradingView meant reverse-engineering an app with
+> no automation API — real mouse events for React, CDP **focus emulation** to beat
+> `document.hasFocus()` gating, and calling TradingView's internal charting API
+> directly for drawings and data. The full story:
+> **[docs/REVERSE-ENGINEERING.md](docs/REVERSE-ENGINEERING.md).**
 
 ---
 
@@ -73,6 +80,8 @@ Then just ask Claude:
 > "Switch to ETHUSD on the 4H, add an RSI, and screenshot it."
 
 ## Web dashboard
+
+![Landing page](docs/images/landing.png)
 
 Prefer clicking to talking? glasstape ships a **dark glass control panel** backed
 by a small HTTP API — no Claude required:
@@ -149,6 +158,7 @@ glasstape symbol BTCUSD         Switch symbol
 glasstape timeframe 4H          Switch timeframe (1,5,15,60,240,4H,D,W,1mo…)
 glasstape legend                Print legend OHLC/indicator values
 glasstape screenshot [path]     Save a PNG screenshot
+glasstape backtest BTCUSDT 4h sma_crossover   Backtest on Binance data (no TradingView)
 glasstape eval "<expr>"         Evaluate JS in the page (advanced)
 glasstape targets               List CDP targets on the debug port
 glasstape tools                 List the MCP tools
