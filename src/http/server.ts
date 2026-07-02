@@ -4,6 +4,9 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GlasstapeContext } from "../context.js";
 import { runBacktest, STRATEGIES } from "../backtest/index.js";
+import { walkForward } from "../backtest/analysis.js";
+import { fetchCandles } from "../data/index.js";
+import type { Candle } from "../backtest/types.js";
 import { runHealthCheck } from "../health/check.js";
 import { isGlasstapeError } from "../util/errors.js";
 import { log } from "../util/logger.js";
@@ -89,15 +92,28 @@ async function handleApi(
         strategies: Object.values(STRATEGIES).map((s) => ({ name: s.name, description: s.description, defaults: s.defaults })),
       });
     }
-    if (method === "POST" && pathname === "/api/backtest") {
+    if (method === "POST" && (pathname === "/api/backtest" || pathname === "/api/walkforward")) {
       const body = await parseJsonBody(req);
       const strategy = String(body.strategy ?? "");
       if (!(strategy in STRATEGIES)) {
         return sendJson(res, 400, { ok: false, code: "INVALID_INPUT", error: `strategy must be one of ${Object.keys(STRATEGIES).join(", ")}` });
       }
       const count = typeof body.count === "number" ? body.count : 300;
-      const data = await ctx.tv.getCandles(count);
-      if (!data.ok || !data.candles || data.candles.length < 30) {
+      let candles: Candle[];
+      let symbol: string | undefined;
+      let resolution: string | undefined;
+      if (body.source === "binance") {
+        const r = await fetchCandles("binance", String(body.symbol ?? "BTCUSDT"), String(body.interval ?? "4h"), count);
+        candles = r.candles;
+        symbol = `BINANCE:${r.symbol.toUpperCase()}`;
+        resolution = r.interval;
+      } else {
+        const d = await ctx.tv.getCandles(count);
+        candles = d.candles ?? [];
+        symbol = d.symbol;
+        resolution = d.resolution;
+      }
+      if (candles.length < 30) {
         return sendJson(res, 502, { ok: false, code: "TV_NOT_READY", error: "Could not read enough candles to backtest." });
       }
       const params = (body.params && typeof body.params === "object" ? body.params : {}) as Record<string, number>;
@@ -105,8 +121,11 @@ async function handleApi(
         feeBps: typeof body.feeBps === "number" ? body.feeBps : undefined,
         slippageBps: typeof body.slippageBps === "number" ? body.slippageBps : undefined,
       };
-      const result = runBacktest(data.candles, strategy, params, config);
-      return sendJson(res, 200, { ok: true, symbol: data.symbol, resolution: data.resolution, ...result });
+      if (pathname === "/api/walkforward") {
+        const folds = typeof body.folds === "number" ? body.folds : 4;
+        return sendJson(res, 200, { ok: true, symbol, resolution, ...walkForward(candles, strategy, params, config, folds) });
+      }
+      return sendJson(res, 200, { ok: true, symbol, resolution, ...runBacktest(candles, strategy, params, config) });
     }
     if (method === "GET" && pathname === "/api/screenshot") {
       const b64 = await ctx.tv.screenshot({ format: "png" });

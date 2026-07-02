@@ -3,6 +3,8 @@ import { writeFile } from "node:fs/promises";
 import { createContext } from "../context.js";
 import { startServer } from "../mcp/server.js";
 import { startHttpServer } from "../http/server.js";
+import { fetchCandles } from "../data/index.js";
+import { runBacktest } from "../backtest/index.js";
 import { runHealthCheck } from "../health/check.js";
 import { allTools } from "../domains/index.js";
 import { isGlasstapeError } from "../util/errors.js";
@@ -23,6 +25,7 @@ Usage: glasstape <command> [args]
   timeframe <CODE>      Switch the timeframe (e.g. 240, 4H, D)
   legend                Print the chart legend value rows
   screenshot [path]     Save a screenshot (default: ./glasstape-screenshot-<ts>.png)
+  backtest <SYM> <IV> [strat]   Backtest on Binance data — standalone, no TradingView
   targets               List Chrome DevTools targets on the debug port
   eval <expression>     Evaluate a JS expression in the page (advanced)
   tools                 List the MCP tools this server exposes
@@ -169,6 +172,34 @@ async function cmdEval(expr: string | undefined): Promise<number> {
   }
 }
 
+async function cmdBacktest(args: string[]): Promise<number> {
+  const [symbol, interval, strategy] = args;
+  if (!symbol || !interval) {
+    out("usage: glasstape backtest <SYMBOL> <INTERVAL> [strategy]   (standalone — Binance data, no TradingView)");
+    out("  e.g. glasstape backtest BTCUSDT 4h sma_crossover");
+    return 2;
+  }
+  const strat = strategy ?? "sma_crossover";
+  try {
+    const { candles, symbol: sym, interval: iv } = await fetchCandles("binance", symbol, interval, 500);
+    const r = runBacktest(candles, strat, {}, {});
+    const m = r.metrics;
+    out(`\n${strat} · BINANCE:${sym.toUpperCase()} @ ${iv} · ${r.bars} bars`);
+    out(`  Return        ${m.totalReturnPct}%   (buy & hold ${m.buyHoldReturnPct}%)`);
+    out(`  CAGR          ${m.cagrPct}%`);
+    out(`  Max drawdown  ${m.maxDrawdownPct}%`);
+    out(`  Sharpe ${m.sharpe} · Sortino ${m.sortino} · Calmar ${m.calmar}`);
+    out(`  Trades        ${m.numTrades} · win ${m.winRatePct}% · PF ${m.profitFactor}`);
+    out(`  In-sample ${r.inSample.totalReturnPct}%  →  Out-of-sample ${r.outOfSample.totalReturnPct}%`);
+    if (r.warning) out(`  ⚠ ${r.warning}`);
+    out("");
+    return 0;
+  } catch (e) {
+    out("backtest failed: " + (e instanceof Error ? e.message : String(e)));
+    return 1;
+  }
+}
+
 function cmdTools(): number {
   for (const t of allTools) out(`${t.name.padEnd(20)} ${t.description.split(".")[0]}.`);
   return 0;
@@ -202,6 +233,7 @@ async function main(): Promise<boolean> {
     case "timeframe": code = await cmdTimeframe(rest[0]); break;
     case "legend": code = await cmdLegend(); break;
     case "screenshot": code = await cmdScreenshot(rest[0]); break;
+    case "backtest": code = await cmdBacktest(rest); break;
     case "targets": code = await cmdTargets(); break;
     case "eval": code = await cmdEval(rest.join(" ")); break;
     case "tools": code = cmdTools(); break;

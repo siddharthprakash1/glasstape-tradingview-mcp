@@ -13,6 +13,8 @@ export interface BacktestResult {
   trades: Trade[];
   inSample: Metrics;
   outOfSample: Metrics;
+  /** Equity curve (one point per bar) for charting. */
+  equityCurve: number[];
   /** Non-null when the split suggests the result may be overfit. */
   warning: string | null;
 }
@@ -52,6 +54,7 @@ export function runBacktest(
     trades: full.trades,
     inSample: isResult.metrics,
     outOfSample: oosResult.metrics,
+    equityCurve: full.equityCurve,
     warning: overfitWarning(isResult.metrics, oosResult.metrics),
   };
 }

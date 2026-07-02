@@ -116,11 +116,20 @@ function computeMetrics(
   const std = Math.sqrt(variance);
   const sharpe = std > 0 ? (mean / std) * Math.sqrt(barsPerYear) : 0;
 
+  // Sortino: downside deviation only (returns below 0).
+  const downside = barRets.filter((r) => r < 0);
+  const downVar = downside.reduce((a, b) => a + b * b, 0) / (barRets.length || 1);
+  const downStd = Math.sqrt(downVar);
+  const sortino = downStd > 0 ? (mean / downStd) * Math.sqrt(barsPerYear) : 0;
+
   // CAGR.
   const spanSeconds = n >= 2 ? candles[n - 1]!.time - candles[0]!.time : 0;
   const years = spanSeconds / SECONDS_PER_YEAR;
   const cagrPct =
     years > 0 && finalEquity > 0 ? ((finalEquity / initial) ** (1 / years) - 1) * 100 : 0;
+
+  // Calmar: annualised return / max drawdown.
+  const calmar = maxDd > 0 ? cagrPct / (maxDd * 100) : 0;
 
   // Trade stats.
   const wins = trades.filter((t) => t.returnPct > 0);
@@ -140,6 +149,8 @@ function computeMetrics(
     cagrPct: round(cagrPct, 2),
     maxDrawdownPct: round(maxDd * 100, 2),
     sharpe: round(sharpe, 2),
+    sortino: round(sortino, 2),
+    calmar: round(calmar, 2),
     numTrades: trades.length,
     winRatePct: round(winRatePct, 1),
     profitFactor: Number.isFinite(profitFactor) ? round(profitFactor, 2) : profitFactor,

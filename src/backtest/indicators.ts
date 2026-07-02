@@ -77,3 +77,66 @@ export function lowest(values: number[], period: number): Array<number | undefin
   }
   return out;
 }
+
+/** Rolling population standard deviation over `period` bars. */
+export function stddev(values: number[], period: number): Array<number | undefined> {
+  const out: Array<number | undefined> = new Array(values.length).fill(undefined);
+  const means = sma(values, period);
+  for (let i = period - 1; i < values.length; i++) {
+    const mean = means[i]!;
+    let acc = 0;
+    for (let j = i - period + 1; j <= i; j++) acc += (values[j]! - mean) ** 2;
+    out[i] = Math.sqrt(acc / period);
+  }
+  return out;
+}
+
+export interface Bands {
+  middle: Array<number | undefined>;
+  upper: Array<number | undefined>;
+  lower: Array<number | undefined>;
+}
+
+/** Bollinger Bands: SMA(period) ± mult · stddev(period). */
+export function bollinger(values: number[], period: number, mult: number): Bands {
+  const middle = sma(values, period);
+  const sd = stddev(values, period);
+  const upper = middle.map((m, i) => (m !== undefined && sd[i] !== undefined ? m + mult * sd[i]! : undefined));
+  const lower = middle.map((m, i) => (m !== undefined && sd[i] !== undefined ? m - mult * sd[i]! : undefined));
+  return { middle, upper, lower };
+}
+
+export interface Macd {
+  macd: Array<number | undefined>;
+  signal: Array<number | undefined>;
+  histogram: Array<number | undefined>;
+}
+
+/** MACD line = EMA(fast) − EMA(slow); signal = EMA(signalPeriod) of the MACD line. */
+export function macd(values: number[], fast = 12, slow = 26, signalPeriod = 9): Macd {
+  const emaFast = ema(values, fast);
+  const emaSlow = ema(values, slow);
+  const line = values.map((_, i) =>
+    emaFast[i] !== undefined && emaSlow[i] !== undefined ? emaFast[i]! - emaSlow[i]! : undefined,
+  );
+  // Signal = EMA of the defined portion of the MACD line.
+  const firstDefined = line.findIndex((v) => v !== undefined);
+  const signal: Array<number | undefined> = new Array(values.length).fill(undefined);
+  if (firstDefined >= 0) {
+    const defined = line.slice(firstDefined).map((v) => v as number);
+    const sig = ema(defined, signalPeriod);
+    for (let i = 0; i < sig.length; i++) signal[firstDefined + i] = sig[i];
+  }
+  const histogram = line.map((v, i) => (v !== undefined && signal[i] !== undefined ? v - signal[i]! : undefined));
+  return { macd: line, signal, histogram };
+}
+
+/** Rate of change over `period` bars, in percent. */
+export function roc(values: number[], period: number): Array<number | undefined> {
+  const out: Array<number | undefined> = new Array(values.length).fill(undefined);
+  for (let i = period; i < values.length; i++) {
+    const prev = values[i - period]!;
+    if (prev !== 0) out[i] = ((values[i]! - prev) / prev) * 100;
+  }
+  return out;
+}

@@ -36,6 +36,8 @@ export interface Metrics {
   cagrPct: number;
   maxDrawdownPct: number;
   sharpe: number;
+  sortino: number;
+  calmar: number;
   numTrades: number;
   winRatePct: number;
   profitFactor: number;

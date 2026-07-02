@@ -1,4 +1,4 @@
-import { highest, lowest, rsi, sma } from "./indicators.js";
+import { bollinger, ema, highest, lowest, macd as macdIndicator, roc, rsi, sma } from "./indicators.js";
 import type { Candle } from "./types.js";
 
 /** A strategy turns candles + params into a target-position series (0 flat, 1 long). */
@@ -73,6 +73,69 @@ export const STRATEGIES: Record<string, StrategyDef> = {
         pos[i] = holding ? 1 : 0;
       }
       return pos;
+    },
+  },
+
+  ema_crossover: {
+    name: "ema_crossover",
+    description: "Long while the fast EMA is above the slow EMA (more responsive than SMA).",
+    defaults: { fast: 12, slow: 26 },
+    run(candles, p) {
+      const c = closes(candles);
+      const fast = ema(c, Math.round(p.fast ?? 12));
+      const slow = ema(c, Math.round(p.slow ?? 26));
+      return c.map((_, i) => {
+        const f = fast[i];
+        const s = slow[i];
+        return f !== undefined && s !== undefined && f > s ? 1 : 0;
+      });
+    },
+  },
+
+  macd: {
+    name: "macd",
+    description: "Long while the MACD line is above its signal line (trend/momentum).",
+    defaults: { fast: 12, slow: 26, signal: 9 },
+    run(candles, p) {
+      const m = macdIndicator(closes(candles), Math.round(p.fast ?? 12), Math.round(p.slow ?? 26), Math.round(p.signal ?? 9));
+      return candles.map((_, i) => {
+        const line = m.macd[i];
+        const sig = m.signal[i];
+        return line !== undefined && sig !== undefined && line > sig ? 1 : 0;
+      });
+    },
+  },
+
+  bollinger: {
+    name: "bollinger",
+    description: "Mean reversion: buy a close below the lower band, exit at the middle band.",
+    defaults: { period: 20, mult: 2 },
+    run(candles, p) {
+      const c = closes(candles);
+      const b = bollinger(c, Math.round(p.period ?? 20), p.mult ?? 2);
+      const pos: number[] = new Array(candles.length).fill(0);
+      let holding = false;
+      for (let i = 0; i < candles.length; i++) {
+        const lower = b.lower[i];
+        const mid = b.middle[i];
+        if (lower !== undefined && mid !== undefined) {
+          if (!holding && c[i]! < lower) holding = true;
+          else if (holding && c[i]! > mid) holding = false;
+        }
+        pos[i] = holding ? 1 : 0;
+      }
+      return pos;
+    },
+  },
+
+  momentum: {
+    name: "momentum",
+    description: "Long while the N-bar rate of change is above a threshold (%).",
+    defaults: { period: 20, threshold: 0 },
+    run(candles, p) {
+      const r = roc(closes(candles), Math.round(p.period ?? 20));
+      const threshold = p.threshold ?? 0;
+      return candles.map((_, i) => (r[i] !== undefined && r[i]! > threshold ? 1 : 0));
     },
   },
 };
